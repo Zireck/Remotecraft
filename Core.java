@@ -19,31 +19,28 @@ public class Core implements ITickHandler {
 	Minecraft mc = Minecraft.getMinecraft();
 	GuiScreen guiScreen = Minecraft.getMinecraft().currentScreen;
 	
+	// Tells you if there's a minecraft world loaded
 	boolean isWorldLoaded = false;
-	
-	// Discovery Thread
-	Thread discoveryThread;
+
 	// Socket manager
-	Networker n = null;
+	NetworkManager nManager = null;
 	
-	// ***** SPECIFIC DATA *****
-	// User specific data
+	// Discovery Socket
+	NetworkDiscovery nDiscovery = null;
+	Thread nDiscoveryThread = null;
+	
+	// User info
 	String username = "";
 	int health = 20;
 	int hunger = 20;
 	int expLvl = 0;
 	int x, y, z;
 	
-	String biome = "";
-	// S = Survival ; C = Creative ; A = Adventure
-	String gameMode = "";
-	
-	// World specific data
+	// World info
 	String worldName = "";
-	// time, weather
+	String biome = "";
 	boolean isRaining = false;
 	boolean isThundering = false;
-
 	
 	@Override
 	public void tickStart(EnumSet<TickType> type, Object... tickData) {
@@ -77,40 +74,45 @@ public class Core implements ITickHandler {
 
 	public void onTickInGame() {
 		if (!isWorldLoaded()) {
+			
 			setWorldLoaded();
 			
-			// Discoverable
-			discoveryThread = new Thread(Discovery.getInstance());
-			discoveryThread.start();
+			// Network Discovery
+			nDiscovery = NetworkDiscovery.getInstance();
+			nDiscovery.init(worldName);
+
+			nDiscoveryThread = new Thread(nDiscovery);
+			nDiscoveryThread.start();
 			
-			// Load Networker
-			if (n==null) {
-				n = new Networker(this);
-			}
-		} else {
-			// Update info on every gametick
-			updateInfo();
+			// Network Manager
+			nManager = new NetworkManager(this);
+			
+		}
+		
+		updateInfo();
+		
+		if (nDiscovery.worldName == "") {
+			nDiscovery.worldName = worldName;
 		}
 	}
 	
 	public void onTickInGUI(GuiScreen guiScreen) {
 		if (isWorldLoaded()) {
 			setWorldUnloaded();
+			
+			// Shutdown the Network Discovery thread
+			if (nDiscoveryThread != null) {
+				nDiscoveryThread.interrupt();
+				nDiscoveryThread = null;
+			}
+			
+			// Shutdown the Network Manager
+			if (nManager != null) {
+				nManager.shutdown();
+				nManager = null;
+			}
+			
 			resetInfo();
-			
-			// Stop discoverable thread
-			try {
-				Discovery.getInstance().terminate();
-				discoveryThread.join();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-			
-			// Unload Networker
-			if (n != null) {
-				n.shutdown();
-				n = null;
-			}
 		}
 	}
 	
@@ -136,15 +138,14 @@ public class Core implements ITickHandler {
 		
 		updateWorldname();
 		updateWeather();
-		updateTime();
 		//updateGameMode();
 	}
 	
 	public void sendEverything() {
-		n.sendCoordX(this.x);
-		n.sendCoordY(this.y);
-		n.sendCoordZ(this.z);
-		n.sendBiome(this.biome);
+		nManager.sendCoordX(this.x);
+		nManager.sendCoordY(this.y);
+		nManager.sendCoordZ(this.z);
+		nManager.sendBiome(this.biome);
 	}
 	
 	public void resetInfo() {
@@ -171,19 +172,19 @@ public class Core implements ITickHandler {
 		if (this.x != x) {
 			this.x = x;
 			System.out.println("k9d3 x coord = "+this.x);
-			n.sendCoordX(this.x);
+			nManager.sendCoordX(this.x);
 		}
 		
 		if (this.y != y) {
 			this.y = y;
 			System.out.println("k9d3 y coord = "+this.y);
-			n.sendCoordY(this.y);
+			nManager.sendCoordY(this.y);
 		}
 		
 		if (this.z != z) {
 			this.z = z;
 			System.out.println("k9d3 z coord = "+this.z);
-			n.sendCoordZ(this.z);
+			nManager.sendCoordZ(this.z);
 		}
 		
 	}
@@ -200,7 +201,7 @@ public class Core implements ITickHandler {
 				System.out.println("k9d3 previous biome: "+this.biome);
 				System.out.println("k9d3 new biome: "+biome);
 				this.biome = biome;
-				n.sendBiome(this.biome);
+				nManager.sendBiome(this.biome);
 			}
 		} catch (NullPointerException e) {
 			e.printStackTrace();
@@ -262,13 +263,6 @@ public class Core implements ITickHandler {
 			System.out.println("k9d3 stopped thundering");
 		}
 	}
-	
-	public void updateTime() {
-		//System.out.println("k9d3 first time: "+mc.theWorld.getWorldTime());
-		//System.out.println("k9d3 second time: "+mc.theWorld.getWorldInfo().getWorldTime());
-		
-	}
-	
 	
 	/*public void updateGameMode() {
 		//EnumGameType currentGameMode = mc.theWorld.getWorldInfo().getGameType();
