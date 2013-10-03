@@ -1,15 +1,13 @@
 package com.zireck.remotecraft;
 
+import java.util.Calendar;
 import java.util.EnumSet;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.integrated.IntegratedServer;
-import net.minecraft.util.FoodStats;
 import net.minecraft.util.MathHelper;
-import net.minecraft.util.StringUtils;
-import net.minecraft.world.EnumGameType;
 import net.minecraft.world.chunk.Chunk;
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
@@ -30,17 +28,23 @@ public class Core implements ITickHandler {
 	Thread nDiscoveryThread = null;
 	
 	// User info
-	String username = "";
+	String playerName = "";
 	int health = 20;
 	int hunger = 20;
+	int armor = 0;
 	int expLvl = 0;
 	int x, y, z;
+	String currentItem = "";
 	
 	// World info
 	String worldName = "";
 	String biome = "";
+	boolean isDaytime = true;
 	boolean isRaining = false;
 	boolean isThundering = false;
+	
+	long mWorldTime = 0;
+	long mWorldTotalTime = 0;
 	
 	@Override
 	public void tickStart(EnumSet<TickType> type, Object... tickData) {
@@ -134,18 +138,29 @@ public class Core implements ITickHandler {
 		updateExpLevel();
 		updateHealth();
 		updateHunger();
-		updateUsername();
+		updateArmor();
+		updatePlayername();
+		updateCurrentItem();
 		
 		updateWorldname();
+		updateDaytime();
 		updateWeather();
 		//updateGameMode();
+		
+		updateTime();
 	}
 	
 	public void sendEverything() {
+		nManager.sendPlayername(this.playerName);
+		nManager.sendHealth(this.health);
+		nManager.sendHunger(this.hunger);
+		nManager.sendArmor(this.armor);
 		nManager.sendCoordX(this.x);
 		nManager.sendCoordY(this.y);
 		nManager.sendCoordZ(this.z);
 		nManager.sendBiome(this.biome);
+		nManager.sendExpLevel(this.expLvl);
+		nManager.sendCurrentItem(this.currentItem);
 	}
 	
 	public void resetInfo() {
@@ -156,14 +171,68 @@ public class Core implements ITickHandler {
 		this.expLvl = 0;
 		this.health = 20;
 		this.hunger = 20;
-		this.username = "";
+		this.armor = 0;
+		this.playerName = "";
+		this.currentItem = "";
 		
 		this.worldName = "";
+		this.isDaytime = true;
 		this.isRaining = false;
 		this.isThundering = false;
+		
+		this.mWorldTime = 0;
+		this.mWorldTotalTime = 0;
 	}
 	
-	// Update coords X, Y, Z
+	public void updateWorldname() {
+		IntegratedServer server = this.mc.getIntegratedServer();
+		//String worldName = (server != null) ? server.getFolderName() : "sp_world";
+		String worldName = (server != null) ? server.getWorldName() : "sp_world";
+		if (this.worldName != worldName) {
+			this.worldName = worldName;
+			System.out.println("k9d3 worldname = "+this.worldName);
+		}
+	}
+	
+	public void updatePlayername() {
+		if (this.playerName != mc.thePlayer.getEntityName()) {
+			this.playerName = mc.thePlayer.getEntityName();
+			System.out.println("k9d3 username = "+this.playerName);
+		}
+	}
+	
+	public void updateHealth() {
+		if (this.health != mc.thePlayer.getHealth()) {
+			this.health = mc.thePlayer.getHealth();
+			System.out.println("k9d3 current health = "+this.health);
+			nManager.sendHealth(this.health);
+		}
+	}
+
+	public void updateHunger() {
+		if (this.hunger != mc.thePlayer.getFoodStats().getFoodLevel()) {
+			this.hunger = mc.thePlayer.getFoodStats().getFoodLevel();
+			System.out.println("k9d3 current hunger = "+this.hunger);
+			nManager.sendHunger(this.hunger);
+		}
+	}
+	
+	public void updateArmor() {
+		if (this.armor != mc.thePlayer.getTotalArmorValue()) {
+			this.armor = mc.thePlayer.getTotalArmorValue();
+			System.out.println("k9d3 current armor = "+this.armor);
+			nManager.sendArmor(this.armor);
+		}
+	}
+	
+	public void updateExpLevel() {
+		if (this.expLvl != mc.thePlayer.experienceLevel) {
+			this.expLvl = mc.thePlayer.experienceLevel;
+			System.out.println("k9d3 current exp level = "+this.expLvl);
+			nManager.sendExpLevel(this.expLvl);
+		}
+	}
+	
 	public void updateCoords() {
 		int x = MathHelper.floor_double(mc.thePlayer.posX);
 		int y = MathHelper.floor_double(mc.thePlayer.posY);
@@ -208,41 +277,24 @@ public class Core implements ITickHandler {
 		}
 	}
 	
-	public void updateExpLevel() {
-		if (this.expLvl != mc.thePlayer.experienceLevel) {
-			this.expLvl = mc.thePlayer.experienceLevel;
-			System.out.println("k9d3 current exp level = "+this.expLvl);
+	public void updateCurrentItem() {
+		
+		if (mc.thePlayer.inventory.getCurrentItem() == null && !this.currentItem.equals("")) {
+			this.currentItem = "";
+			nManager.sendCurrentItem("null");
+		} else if (mc.thePlayer.inventory != null && mc.thePlayer.inventory.getCurrentItem() != null && mc.thePlayer.inventory.getCurrentItem().getDisplayName() != null) {
+			
+			if (!mc.thePlayer.inventory.getCurrentItem().getDisplayName().equals(this.currentItem)) {
+				this.currentItem = mc.thePlayer.inventory.getCurrentItem().getDisplayName();
+				nManager.sendCurrentItem(this.currentItem);
+			}
+			
 		}
 	}
 	
-	public void updateHealth() {
-		if (this.health != mc.thePlayer.getHealth()) {
-			this.health = mc.thePlayer.getHealth();
-			System.out.println("k9d3 current health = "+this.health);
-		}
-	}
-
-	public void updateHunger() {
-		if (this.hunger != mc.thePlayer.getFoodStats().getFoodLevel()) {
-			this.hunger = mc.thePlayer.getFoodStats().getFoodLevel();
-			System.out.println("k9d3 current hunger = "+this.hunger);
-		}
-	}
-	
-	public void updateUsername() {
-		if (this.username != mc.thePlayer.getEntityName()) {
-			this.username = mc.thePlayer.getEntityName();
-			System.out.println("k9d3 username = "+this.username);
-		}
-	}
-	
-	public void updateWorldname() {
-		IntegratedServer server = this.mc.getIntegratedServer();
-		//String worldName = (server != null) ? server.getFolderName() : "sp_world";
-		String worldName = (server != null) ? server.getWorldName() : "sp_world";
-		if (this.worldName != worldName) {
-			this.worldName = worldName;
-			System.out.println("k9d3 worldname = "+this.worldName);
+	public void updateDaytime() {
+		if (this.isDaytime != mc.theWorld.isDaytime()) {
+			this.isDaytime = mc.theWorld.isDaytime();
 		}
 	}
 	
@@ -262,6 +314,43 @@ public class Core implements ITickHandler {
 			this.isThundering = false;
 			System.out.println("k9d3 stopped thundering");
 		}
+	}
+	
+	public void updateTime() {
+		if (this.mWorldTime != mc.theWorld.getWorldInfo().getWorldTime()) {
+			this.mWorldTime = mc.theWorld.getWorldInfo().getWorldTime();
+			System.out.println("k9d3 world time: "+this.mWorldTime);
+		}
+
+		if (this.mWorldTotalTime != mc.theWorld.getWorldInfo().getWorldTotalTime()) {
+			this.mWorldTotalTime = mc.theWorld.getWorldInfo().getWorldTotalTime();
+			System.out.println("k9d3 world TOTAL time: "+this.mWorldTotalTime);
+		}
+		
+		
+		// Time
+		long time;
+		if (mc.theWorld.getWorldTime() > 24000) {
+			time = mc.theWorld.getWorldTime() - 24000 * (int) (mc.theWorld.getWorldTime() / 24000);
+		} else {
+			time = mc.theWorld.getWorldTime();
+		}
+		
+		int hour, minute;
+		if ( (((int) time / 1000) + 6) > 23 ) {
+			hour = (((int) time / 1000) + 6) - 24;
+		} else {
+			hour = ((int) time / 1000) + 6;
+		}
+		
+		if ( ((time * 60) / 1000) > 60 ) {
+			minute = (int) ((time * 60) / 1000) - (60 * ((int) time / 1000));
+		} else {
+			minute = (int) ((time * 60) / 1000);
+		}
+		
+		System.out.println("k9d3 Time: "+hour+":"+minute);
+
 	}
 	
 	/*public void updateGameMode() {

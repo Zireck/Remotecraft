@@ -1,5 +1,6 @@
 package com.zireck.remotecraft;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -61,7 +62,7 @@ public class NetworkManager implements Runnable {
 	
 	// Network communication thread
 	public void run() {
-		while (getKeepRunning() && core.isWorldLoaded()) {
+		while (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded()) {
 			try {
 				// Starting the server (reuse & bind)
 				serverSocket = new ServerSocket();
@@ -76,13 +77,13 @@ public class NetworkManager implements Runnable {
 				
 				// IO setup
 				out = new ObjectOutputStream(clientSocket.getOutputStream());
-	            out.flush();
+				out.flush();
 	            in = new ObjectInputStream(clientSocket.getInputStream());
 	            
 	            sendMessage("Success!!");
 	            
 	            // The first time a client connects, you need to send everything
-	            if (getKeepRunning() && getConnectivity() && clientSocket.isConnected() && core.isWorldLoaded()) {
+	            if (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
 	            	core.sendEverything();
 	            }
 	            
@@ -96,20 +97,36 @@ public class NetworkManager implements Runnable {
 	            		}
 	            	} catch (ClassNotFoundException e) {
 	            		e.printStackTrace();
+	            	} catch (EOFException e) {
+	            		e.printStackTrace();
+	            		setConnectivity(false);
 	            	}
-	            } while (clientSocket.isConnected() && core.isWorldLoaded() && !msg.equals("REMOTECRAFT_COMMAND_QUIT"));
+	            //} while (clientSocket.isConnected() && core.isWorldLoaded() && !msg.equals("REMOTECRAFT_COMMAND_QUIT"));
+	            } while (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected() && !msg.equals("REMOTECRAFT_COMMAND_QUIT"));
 			} catch (IOException e) {
 				e.printStackTrace();
 			} finally {
-				shutdown();
-			}
-		}
-	}
+				try {
+					if (out!=null)
+						out.close();
+					if (in != null)
+						in.close();
+					if (clientSocket != null)
+						clientSocket.close();
+					if (serverSocket != null)
+						serverSocket.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				setConnectivity(false);
+			} // finally
+		} // while
+	} // run
 	
 	// Send message to the client
 	public void sendMessage(String msg) {
 		
-		if (getKeepRunning() && getConnectivity()) {
+		if (getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
 			if (out != null) {
 				try {
 					out.writeObject(msg);
@@ -151,6 +168,26 @@ public class NetworkManager implements Runnable {
 		thread.interrupt();
 	}
 	
+	public void sendPlayername(String playerName) {
+		sendMessage("REMOTECRAFT_INFO_PLAYERNAME:"+playerName);
+	}
+	
+	public void sendHealth(int health) {
+		sendMessage("REMOTECRAFT_INFO_HEALTH:"+health);
+	}
+	
+	public void sendHunger(int hunger) {
+		sendMessage("REMOTECRAFT_INFO_HUNGER:"+hunger);
+	}
+	
+	public void sendArmor(int armor) {
+		sendMessage("REMOTECRAFT_INFO_ARMOR:"+armor);
+	}
+	
+	public void sendExpLevel(int expLvl) {
+		sendMessage("REMOTECRAFT_INFO_EXPLVL:"+expLvl);
+	}
+	
 	public void sendCoordX(int x) {
 		String coordX = Integer.toString(x);
 		sendMessage("REMOTECRAFT_INFO_COORDX:"+coordX);
@@ -168,6 +205,22 @@ public class NetworkManager implements Runnable {
 	
 	public void sendBiome(String biome) {
 		sendMessage("REMOTECRAFT_INFO_BIOME:"+biome);
+	}
+	
+	public void sendCurrentItem(String currentItem) {
+		if (currentItem.equals("null")) {
+			sendMessage("REMOTECRAFT_INFO_CURRENTITEM_NULL");
+		} else {
+			sendMessage("REMOTECRAFT_INFO_CURRENTITEM:"+currentItem);
+		}
+	}
+	
+	public void sendDaytime(boolean daytime) {
+		if (daytime) {
+			sendMessage("REMOTECRAFT_INFO_DAYTIME:TRUE");
+		} else {
+			sendMessage("REMOTECRAFT_INFO_DAYTIME:FALSE");
+		}
 	}
 	
 }
