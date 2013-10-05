@@ -1,13 +1,15 @@
 package com.zireck.remotecraft;
 
+import java.io.BufferedInputStream;
 import java.io.EOFException;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
 
 public class NetworkManager implements Runnable {
 	
@@ -95,6 +97,9 @@ public class NetworkManager implements Runnable {
 	            		if (msg.equals("REMOTECRAFT_COMMAND_QUIT")) {
 	            			sendMessage("REMOTECRAFT_COMMAND_QUIT");
 	            		}
+	            		if (msg.equals("REMOTECRAFT_COMMAND_GETWORLDINFO")) {
+	            			core.sendWorldInfo();
+	            		}
 	            	} catch (ClassNotFoundException e) {
 	            		e.printStackTrace();
 	            	} catch (EOFException e) {
@@ -137,7 +142,7 @@ public class NetworkManager implements Runnable {
 				}
 			}
 		}
-		
+
 	}
 	
 	// Shutdown the Server
@@ -215,6 +220,11 @@ public class NetworkManager implements Runnable {
 		}
 	}
 	
+	// *** WORLD INFO *** //
+	public void sendWorldName(String worldName) {
+		sendMessage("REMOTECRAFT_INFO_WORLDNAME:"+worldName);
+	}
+	
 	public void sendDaytime(boolean daytime) {
 		if (daytime) {
 			sendMessage("REMOTECRAFT_INFO_DAYTIME:TRUE");
@@ -223,4 +233,95 @@ public class NetworkManager implements Runnable {
 		}
 	}
 	
+	public void sendTime(int hour, int minute, String timeZone) {
+		String mHour = Integer.toString(hour);
+		String mMin;
+		if (minute < 10) {
+			mMin = "0"+Integer.toString(minute);
+		} else {
+			mMin = Integer.toString(minute);
+		}
+		String mTime = mHour + "_" + mMin + "_" + timeZone;
+		sendMessage("REMOTECRAFT_INFO_TIME:"+mTime);
+	}
+	
+	public void sendRaining(boolean isRaining) {
+		if (isRaining) {
+			sendMessage("REMOTECRAFT_INFO_RAINING:TRUE");
+		} else {
+			sendMessage("REMOTECRAFT_INFO_RAINING:FALSE");
+		}
+	}
+	
+	public void sendThundering(boolean isThundering) {
+		if (isThundering) {
+			sendMessage("REMOTECRAFT_INFO_THUNDERING:TRUE");
+		} else {
+			sendMessage("REMOTECRAFT_INFO_THUNDERING:FALSE");
+		}
+	}
+	
+	public void sendScreenShot(String fileName) {
+		
+		sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND");
+		
+		// File to send
+		File myFile = new File(fileName);
+		int fSize = (int) myFile.length();
+		if (fSize < myFile.length()) {
+			System.out.println("File is too big");
+			//throw new IOException("File is too big");
+		}
+		
+		// Send the file's size
+		byte[] bSize = new byte[4];
+		bSize[0] = (byte) ((fSize & 0xff000000) >> 24);
+	    bSize[1] = (byte) ((fSize & 0x00ff0000) >> 16);
+	    bSize[2] = (byte) ((fSize & 0x0000ff00) >> 8);
+	    bSize[3] = (byte) (fSize & 0x000000ff);
+	    // 4 bytes containing the file size
+	    try {
+	    	out.write(bSize, 0, 4);
+	    } catch (IOException e) {
+	    	e.printStackTrace();
+	    }
+	    
+	    FileInputStream fis = null;
+	    BufferedInputStream bis = null;
+	    try {
+	    	fis = new FileInputStream(myFile);
+	    	bis = new BufferedInputStream(fis);
+	    
+	    	byte[] outBuffer = new byte[fSize];
+	    	int bRead = bis.read(outBuffer, 0, outBuffer.length);
+	    	out.write(outBuffer, 0, bRead);
+	    	out.flush();
+	    } catch (IOException e) {
+	    	e.printStackTrace();
+	    } finally {
+	    	try {
+	    		bis.close();
+	    	} catch (IOException e) {
+	    		e.printStackTrace();
+	    	}
+	    }
+	    
+	    sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED");
+		
+	}
+	
+	/*
+	public void sendScreenShot(Image screenShot) {
+		if (getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
+			if (out != null) {
+				try {
+					out.writeObject(screenShot);
+					out.flush();
+					System.out.println("k9d3 screenShot enviada!");
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}*/
 }
