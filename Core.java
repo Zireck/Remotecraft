@@ -46,6 +46,7 @@ public class Core implements ITickHandler {
 	
 	// World info
 	String worldName = "";
+	long seed = 0;
 	String biome = "";
 	boolean isDaytime = true;
 	boolean isRaining = false;
@@ -156,6 +157,7 @@ public class Core implements ITickHandler {
 		
 		// World Info
 		updateWorldname();
+		updateSeed();
 		updateDaytime();
 		updateTime();
 		updateWeather();
@@ -176,6 +178,7 @@ public class Core implements ITickHandler {
 		
 		// World Info
 		nManager.sendWorldName(this.worldName);
+		nManager.sendSeed(this.seed);
 		nManager.sendDaytime(this.isDaytime);
 		nManager.sendRaining(this.isRaining);
 		nManager.sendThundering(this.isThundering);
@@ -184,11 +187,10 @@ public class Core implements ITickHandler {
 	
 	public void sendWorldInfo() {
 		forceUpdateWorldname();
+		updateSeed();
 		forceUpdateDaytime();
 		forceUpdateBiome();
 		forceUpdateWeather();
-		
-		// Calculate the actual current time
 		forceUpdateTime();
 	}
 	
@@ -205,6 +207,7 @@ public class Core implements ITickHandler {
 		this.currentItem = "";
 		
 		this.worldName = "";
+		this.seed = 0;
 		this.isDaytime = true;
 		this.isRaining = false;
 		this.isThundering = false;
@@ -224,6 +227,13 @@ public class Core implements ITickHandler {
 			this.worldName = worldName;
 			System.out.println("k9d3 worldname = "+this.worldName);
 			nManager.sendWorldName(this.worldName);
+		}
+	}
+	
+	public void updateSeed() {
+		if (this.seed != mc.theWorld.getSeed()) {
+			this.seed = mc.theWorld.getSeed();
+			nManager.sendSeed(this.seed);
 		}
 	}
 	
@@ -381,6 +391,7 @@ public class Core implements ITickHandler {
 		}
 		
 		int hour, minute;
+		String timeZ = "";
 		
 		// Calculate minutes
 		if ( ((time * 60) / 1000) > 60 ) {
@@ -391,7 +402,7 @@ public class Core implements ITickHandler {
 		
 		// if minutes == 0 or 15 or 30 or 45, then update and send
 		if (minute == 0 || minute == 15 || minute == 30 || minute == 45) {
-			this.min = minute;
+			
 			// Calculate hour
 			if ( (((int) time / 1000) + 6) > 23 ) {
 				hour = (((int) time / 1000) + 6) - 24;
@@ -401,21 +412,24 @@ public class Core implements ITickHandler {
 			
 			// Set hour from 24 to 12
 			if (hour > 11) {
-				this.hour = hour - 12;
-				this.timeZone = "pm";
+				hour = hour - 12;
+				timeZ = "pm";
 			} else {
-				this.hour = hour;
-				this.timeZone = "am";
+				timeZ = "am";
 			}
 			
 			// Set 0 to 12
-			if (this.hour == 0) {
-				this.hour = 12;
+			if (hour == 0) {
+				hour = 12;
 			}
 			
-			System.out.println("k9d3 Time: "+hour+":"+minute);
-			
-			nManager.sendTime(this.hour, this.min, this.timeZone);
+			if (this.hour != hour || this.min != minute || !this.timeZone.equals(timeZ)) {
+				this.hour = hour;
+				this.min = minute;
+				this.timeZone = timeZ;
+				nManager.sendTime(this.hour, this.min, this.timeZone);
+				System.out.println("k9d3 Time: "+hour+":"+minute);
+			}
 			
 		}
 

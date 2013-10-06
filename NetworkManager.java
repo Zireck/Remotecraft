@@ -11,6 +11,8 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 
+import net.minecraft.client.Minecraft;
+
 public class NetworkManager implements Runnable {
 	
 	private final int PORT = 9999;
@@ -65,6 +67,7 @@ public class NetworkManager implements Runnable {
 	// Network communication thread
 	public void run() {
 		while (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded()) {
+		
 			try {
 				// Starting the server (reuse & bind)
 				serverSocket = new ServerSocket();
@@ -82,7 +85,7 @@ public class NetworkManager implements Runnable {
 				out.flush();
 	            in = new ObjectInputStream(clientSocket.getInputStream());
 	            
-	            sendMessage("Success!!");
+	            //sendMessage("Success!!");
 	            
 	            // The first time a client connects, you need to send everything
 	            if (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
@@ -112,14 +115,26 @@ public class NetworkManager implements Runnable {
 				e.printStackTrace();
 			} finally {
 				try {
-					if (out!=null)
-						out.close();
-					if (in != null)
+					synchronized (out) {
+						
+						if (out!=null) {
+							out.close();
+							out = null;
+						}
+					
+					}
+					if (in != null) {
 						in.close();
-					if (clientSocket != null)
+						in = null;
+					}
+					if (clientSocket != null) {
 						clientSocket.close();
-					if (serverSocket != null)
+						clientSocket = null;
+					}
+					if (serverSocket != null) {
 						serverSocket.close();
+						serverSocket = null;
+					}
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -139,16 +154,23 @@ public class NetworkManager implements Runnable {
 					System.out.println("k9d3 server> "+msg);
 				} catch (IOException e) {
 					e.printStackTrace();
+					Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage("Error al enviar: "+msg);
 				}
 			}
 		}
-
+		
 	}
 	
 	// Shutdown the Server
 	public void shutdown() {
 		
 		sendMessage("REMOTECRAFT_COMMAND_QUIT");
+		
+		setConnectivity(false);
+		
+		setKeepRunning(false);
+		
+		thread.interrupt();
 		
 		try {
 			if (out!=null)
@@ -166,11 +188,6 @@ public class NetworkManager implements Runnable {
 			e.printStackTrace();
 		}
 		
-		setConnectivity(false);
-		
-		setKeepRunning(false);
-		
-		thread.interrupt();
 	}
 	
 	public void sendPlayername(String playerName) {
@@ -225,6 +242,10 @@ public class NetworkManager implements Runnable {
 		sendMessage("REMOTECRAFT_INFO_WORLDNAME:"+worldName);
 	}
 	
+	public void sendSeed(long seed) {
+		sendMessage("REMOTECRAFT_INFO_SEED:"+Long.toString(seed));
+	}
+	
 	public void sendDaytime(boolean daytime) {
 		if (daytime) {
 			sendMessage("REMOTECRAFT_INFO_DAYTIME:TRUE");
@@ -263,50 +284,73 @@ public class NetworkManager implements Runnable {
 	
 	public void sendScreenShot(String fileName) {
 		
-		sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND");
-		
-		// File to send
-		File myFile = new File(fileName);
-		int fSize = (int) myFile.length();
-		if (fSize < myFile.length()) {
-			System.out.println("File is too big");
-			//throw new IOException("File is too big");
+		synchronized (out) {
+			
+			sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND");
+			
+			// File to send
+			File myFile = new File(fileName);
+			int fSize = (int) myFile.length();
+			if (fSize < myFile.length()) {
+				System.out.println("File is too big");
+				//throw new IOException("File is too big");
+				sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_ERROR");
+				return;
+			}
+			
+			// Send the file's size
+			byte[] bSize = new byte[4];
+			bSize[0] = (byte) ((fSize & 0xff000000) >> 24);
+		    bSize[1] = (byte) ((fSize & 0x00ff0000) >> 16);
+		    bSize[2] = (byte) ((fSize & 0x0000ff00) >> 8);
+		    bSize[3] = (byte) (fSize & 0x000000ff);
+		    // 4 bytes containing the file size
+		    try {
+		    	out.write(bSize, 0, 4);
+		    } catch (IOException e) {
+		    	e.printStackTrace();
+		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_ERROR");
+		    	return;
+		    }
+		    
+		    boolean noMemoryLimitation = false;
+		    
+		    FileInputStream fis = null;
+		    BufferedInputStream bis = null;
+		    try {
+		    	fis = new FileInputStream(myFile);
+		    	bis = new BufferedInputStream(fis);
+		    	
+		    	if (noMemoryLimitation) {
+		    
+			    	byte[] outBuffer = new byte[fSize];
+			    	int bRead = bis.read(outBuffer, 0, outBuffer.length);
+			    	out.write(outBuffer, 0, bRead);
+		    	
+		    	} else {
+		    		
+		    		int bRead = 0;
+		    		byte[] outBuffer = new byte[8*1024];
+		    		while ( (bRead = bis.read(outBuffer, 0, outBuffer.length)) > 0 ) {
+		    			out.write(outBuffer, 0, bRead);
+		    		}
+		    		
+		    	}
+		    	out.flush();
+		    } catch (IOException e) {
+		    	e.printStackTrace();
+		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_ERROR");
+		    	return;
+		    } finally {
+		    	try {
+		    		bis.close();
+		    	} catch (IOException e) {
+		    		e.printStackTrace();
+		    	}
+		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED");
+		    }
+		    
 		}
-		
-		// Send the file's size
-		byte[] bSize = new byte[4];
-		bSize[0] = (byte) ((fSize & 0xff000000) >> 24);
-	    bSize[1] = (byte) ((fSize & 0x00ff0000) >> 16);
-	    bSize[2] = (byte) ((fSize & 0x0000ff00) >> 8);
-	    bSize[3] = (byte) (fSize & 0x000000ff);
-	    // 4 bytes containing the file size
-	    try {
-	    	out.write(bSize, 0, 4);
-	    } catch (IOException e) {
-	    	e.printStackTrace();
-	    }
-	    
-	    FileInputStream fis = null;
-	    BufferedInputStream bis = null;
-	    try {
-	    	fis = new FileInputStream(myFile);
-	    	bis = new BufferedInputStream(fis);
-	    
-	    	byte[] outBuffer = new byte[fSize];
-	    	int bRead = bis.read(outBuffer, 0, outBuffer.length);
-	    	out.write(outBuffer, 0, bRead);
-	    	out.flush();
-	    } catch (IOException e) {
-	    	e.printStackTrace();
-	    } finally {
-	    	try {
-	    		bis.close();
-	    	} catch (IOException e) {
-	    		e.printStackTrace();
-	    	}
-	    }
-	    
-	    sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED");
 		
 	}
 	
