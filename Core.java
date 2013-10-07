@@ -231,8 +231,8 @@ public class Core implements ITickHandler {
 	}
 	
 	public void updateSeed() {
-		if (this.seed != mc.theWorld.getSeed()) {
-			this.seed = mc.theWorld.getSeed();
+		if (this.seed != mc.getIntegratedServer().getServer().worldServers[0].getSeed()) {
+			this.seed = mc.getIntegratedServer().getServer().worldServers[0].getSeed();
 			nManager.sendSeed(this.seed);
 		}
 	}
@@ -320,7 +320,7 @@ public class Core implements ITickHandler {
 				//String path = mc.getMinecraftDir() + File.separator + "screenshots" + File.separator + ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight);
 				//String path = mc.getAppDir("minecraft") + File.separator + "screenshots" + File.separator + ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight);
 				String path = "/Users/Zireck/Documents/forge/mcp/jars/screenshots/" + ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight).split(" ")[3];
-				nManager.sendScreenShot(path);
+				nManager.sendScreenShot(path, this.worldName);
 			}
 		} catch (NullPointerException e) {
 			e.printStackTrace();
@@ -560,6 +560,39 @@ public class Core implements ITickHandler {
 			}
 		}
 	}*/
+	
+	public void setHealth(String health) {
+		int mHealth = Integer.parseInt(health);
+		mc.thePlayer.setHealth(mHealth);
+	}
+	
+	public void setHunger(String hunger) {
+		int mHunger = Integer.parseInt(hunger);
+		mc.thePlayer.getFoodStats().setFoodLevel(mHunger);
+	}
+	
+	public void setExpLvl(String xpLvl) {
+		int mXpLvl = Integer.parseInt(xpLvl);
+		mc.thePlayer.setXPStats(0, 0, mXpLvl);
+	}
+	
+	public void setWorldTime(String dayOrNight) {
+		if (dayOrNight.equals("DAY")) {
+			//mc.theWorld.setWorldTime(0);
+			System.out.println("k9d3 Trying to set Time as Day");
+			mc.getIntegratedServer().getServer().worldServers[0].setWorldTime(0);
+		} else if (dayOrNight.equals("NIGHT")) {
+			//mc.theWorld.setWorldTime(12500);
+			System.out.println("k9d3 Trying to set Time as Night");
+			mc.getIntegratedServer().getServer().worldServers[0].setWorldTime(12500);
+		}
+	}
+	
+	public void setWorldWeather() {
+		System.out.println("k9d3 TOGGLE RAIN ()");
+		//mc.theWorld.toggleRain();
+		mc.getIntegratedServer().getServer().worldServers[0].toggleRain();
+	}
 	
 	public static boolean isWorldMultiplayer() {
 		try {

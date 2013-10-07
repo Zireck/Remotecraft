@@ -44,6 +44,8 @@ public class NetworkDiscovery implements Runnable {
 		
 		System.out.println("k9d3 Estoy dentro del runnable! run() antes del try {");
 		
+		while (!Thread.currentThread().isInterrupted()) {
+		
 		try {
 			socket = new DatagramSocket(PORT, InetAddress.getByName("0.0.0.0"));
 			socket.setBroadcast(true);
@@ -111,6 +113,8 @@ public class NetworkDiscovery implements Runnable {
 			socket.disconnect();
 			socket.close();
 		}
+		
+		} // while !threadIsInterrupted
 		
 	}
 	

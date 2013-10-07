@@ -103,6 +103,22 @@ public class NetworkManager implements Runnable {
 	            		if (msg.equals("REMOTECRAFT_COMMAND_GETWORLDINFO")) {
 	            			core.sendWorldInfo();
 	            		}
+	            		if (msg.equals("REMOTECRAFT_COMMAND_SETWEATHER")) {
+	            			core.setWorldWeather();
+	            		}
+	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETTIME")) {
+	            			String dayOrNight = msg.split(":")[1];
+	            			core.setWorldTime(dayOrNight);
+	            		}
+	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETHEALTH")) {
+	            			core.setHealth(msg.split(":")[1]);
+	            		}
+	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETHUNGER")) {
+	            			core.setHunger(msg.split(":")[1]);
+	            		}
+	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETEXPLVL")) {
+	            			core.setExpLvl(msg.split(":")[1]);
+	            		}
 	            	} catch (ClassNotFoundException e) {
 	            		e.printStackTrace();
 	            	} catch (EOFException e) {
@@ -190,6 +206,7 @@ public class NetworkManager implements Runnable {
 		
 	}
 	
+	// *** PLAYER INFO *** //
 	public void sendPlayername(String playerName) {
 		sendMessage("REMOTECRAFT_INFO_PLAYERNAME:"+playerName);
 	}
@@ -282,11 +299,11 @@ public class NetworkManager implements Runnable {
 		}
 	}
 	
-	public void sendScreenShot(String fileName) {
+	public void sendScreenShot(String fileName, String worldName) {
 		
 		synchronized (out) {
 			
-			sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND");
+			sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND:"+worldName);
 			
 			// File to send
 			File myFile = new File(fileName);
@@ -347,25 +364,11 @@ public class NetworkManager implements Runnable {
 		    	} catch (IOException e) {
 		    		e.printStackTrace();
 		    	}
-		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED");
+		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED:"+worldName);
 		    }
 		    
 		}
 		
 	}
-	
-	/*
-	public void sendScreenShot(Image screenShot) {
-		if (getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
-			if (out != null) {
-				try {
-					out.writeObject(screenShot);
-					out.flush();
-					System.out.println("k9d3 screenShot enviada!");
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			}
-		}
-	}*/
+
 }
