@@ -119,6 +119,9 @@ public class NetworkManager implements Runnable {
 	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETEXPLVL")) {
 	            			core.setExpLvl(msg.split(":")[1]);
 	            		}
+	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETGAMEMODE")) {
+	            			core.toggleGameMode();
+	            		}
 	            	} catch (ClassNotFoundException e) {
 	            		e.printStackTrace();
 	            	} catch (EOFException e) {

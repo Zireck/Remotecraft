@@ -16,6 +16,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.integrated.IntegratedServer;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.ScreenShotHelper;
+import net.minecraft.world.EnumGameType;
 import net.minecraft.world.chunk.Chunk;
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
@@ -538,7 +539,8 @@ public class Core implements ITickHandler {
 		
 	}
 	
-	/*public void updateGameMode() {
+	public void updateGameMode() {
+		/*
 		//EnumGameType currentGameMode = mc.theWorld.getWorldInfo().getGameType();
 		EnumGameType currentGameMode = mc.getIntegratedServer().getGameType();
 		
@@ -558,22 +560,31 @@ public class Core implements ITickHandler {
 				this.gameMode = "S";
 				System.out.println("k9d3 new game mode: survival");
 			}
-		}
-	}*/
+		}*/
+	}
 	
 	public void setHealth(String health) {
 		int mHealth = Integer.parseInt(health);
-		mc.thePlayer.setHealth(mHealth);
+		mc.getIntegratedServer().getServer().worldServers[0].getPlayerEntityByName(this.playerName).setEntityHealth(mHealth);
 	}
 	
 	public void setHunger(String hunger) {
 		int mHunger = Integer.parseInt(hunger);
-		mc.thePlayer.getFoodStats().setFoodLevel(mHunger);
+		mc.getIntegratedServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).getFoodStats().setFoodLevel(mHunger);
 	}
 	
 	public void setExpLvl(String xpLvl) {
 		int mXpLvl = Integer.parseInt(xpLvl);
-		mc.thePlayer.setXPStats(0, 0, mXpLvl);
+		mc.getIntegratedServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).addExperienceLevel(0);
+		mc.getIntegratedServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).addExperienceLevel(mXpLvl);
+	}
+	
+	public void toggleGameMode() {
+		if (mc.playerController.isInCreativeMode()) {
+			mc.getIntegratedServer().getServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).setGameType(EnumGameType.SURVIVAL);
+		} else {
+			mc.getIntegratedServer().getServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).setGameType(EnumGameType.CREATIVE);
+		}
 	}
 	
 	public void setWorldTime(String dayOrNight) {
