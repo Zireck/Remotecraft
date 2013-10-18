@@ -10,146 +10,182 @@ import java.io.ObjectOutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 
 import net.minecraft.client.Minecraft;
 
 public class NetworkManager implements Runnable {
 	
-	private final int PORT = 9999;
+	private final int MANAGER_PORT = 9999;
 	
-	// Reference to the main class
-	Core core;
-	
-	// Socket Server
-	ServerSocket serverSocket;
-	Socket clientSocket = null;
-	ObjectOutputStream out;
-	ObjectInputStream in;
-	String msg;
+	// Server Socket
+	private ServerSocket serverSocket;
+	private Socket clientSocket = null;
+	private ObjectOutputStream out;
+	private ObjectInputStream in;
+	private String msg;
 	
 	// Self Thread
-	Thread thread;
+	private Thread thread;
 
 	// This class needs to stop running
-	boolean keepRunning = true;
+	private boolean keepRunning;
 	
 	// Tells you if there's a currently established socket connection
-	boolean connectivity = false;
+	private boolean connectivity;
+	
+	// Reference to Core class
+	private INetworkListener mCallback;
+	
+	public interface INetworkListener {
+		public boolean isWorldLoaded();
+		
+		public void sendEverything();
+		
+		public void setHealth(int mHealth);
+		public void setHunger(int mHunger);
+		public void setExpLvl(int mExpLvl);
+		public void toggleGameMode();
+
+		public void setWorldTime(String dayOrNight);
+		public void setWorldWeather();
+		public void enableScreenShot();
+		public void teleportTo(int mDim, int x, int y, int z);
+		public void toggleButton(int mDim, int x, int y, int z);
+		public void toggleLever(int mDim, int x, int y, int z);
+		
+		public void forceSendWorldInfo();
+	}
 	
 	public NetworkManager(Core core) {
-		// TODO Auto-generated constructor stub
-		this.core = core;
-
+		// Make sure that Core class implements INetworkListener
+		try {
+			mCallback = (INetworkListener) core;
+		} catch (ClassCastException e) {
+			e.printStackTrace();
+		}
+		
 		setKeepRunning(true);
 		setConnectivity(false);
 		
-		// Start running
+		// Start running thread
 		thread = new Thread(this);
 		thread.start();
 	}
 	
-	public boolean getKeepRunning() {
+	private boolean getKeepRunning() {
 		return keepRunning;
 	}
 	
-	public void setKeepRunning(boolean b) {
+	private void setKeepRunning(boolean b) {
 		keepRunning = b;
 	}
 	
-	public boolean getConnectivity() {
+	private boolean getConnectivity() {
 		return connectivity;
 	}
 	
-	public void setConnectivity(boolean b) {
-		this.connectivity = b;
+	private void setConnectivity(boolean b) {
+		connectivity = b;
+	}
+	
+	// Shutdown the Server, kind of like a class destructor
+	public void shutdown() {
+		sendMessage("REMOTECRAFT_COMMAND_QUIT");
+		
+		setConnectivity(false);
+		setKeepRunning(false);
+		
+		thread.interrupt();
+		
+		try {
+
+			if (out!=null) {
+				synchronized (out) {
+					out.close();
+				}
+			}
+			
+			if (in != null)
+				in.close();
+			
+			if (clientSocket != null)
+				clientSocket.close();
+			
+			if (serverSocket != null)
+				serverSocket.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		thread = null;
+		
 	}
 	
 	// Network communication thread
 	public void run() {
-		while (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded()) {
+
+		while (!Thread.currentThread().isInterrupted() && getKeepRunning()) {
 		
 			try {
 				// Starting the server (reuse & bind)
 				serverSocket = new ServerSocket();
 				serverSocket.setReuseAddress(true);
-				serverSocket.bind(new InetSocketAddress(PORT));
-				System.out.println("k9d3 Waiting for connection");
+				serverSocket.bind(new InetSocketAddress(MANAGER_PORT));
 				
 				// Waiting for a client to connect
 				clientSocket = serverSocket.accept();
 				setConnectivity(true);
-				System.out.println("k9d3 Connection received from "+clientSocket.getInetAddress().getHostName());
 				
 				// IO setup
+				in = new ObjectInputStream(clientSocket.getInputStream());
 				out = new ObjectOutputStream(clientSocket.getOutputStream());
 				out.flush();
-	            in = new ObjectInputStream(clientSocket.getInputStream());
 	            
-	            //sendMessage("Success!!");
-	            
-	            // The first time a client connects, you need to send everything
-	            if (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
-	            	core.sendEverything();
+	            // The first time a client is connected, you need to send him everything over the socket
+	            if (!thread.isInterrupted() && getKeepRunning() && getConnectivity()) {
+	            	mCallback.sendEverything();
 	            }
 	            
-	            // TODO Listen for petitions
-	            do {
+	            // Socket communication main loop
+	            while (!Thread.currentThread().isInterrupted() && getKeepRunning() && getConnectivity()) {
 	            	try {
 	            		msg = (String) in.readObject();
-	            		System.out.println("k9d3 client> "+msg);
-	            		if (msg.equals("REMOTECRAFT_COMMAND_QUIT")) {
-	            			sendMessage("REMOTECRAFT_COMMAND_QUIT");
-	            		}
-	            		if (msg.equals("REMOTECRAFT_COMMAND_GETWORLDINFO")) {
-	            			core.sendWorldInfo();
-	            		}
-	            		if (msg.equals("REMOTECRAFT_COMMAND_SETWEATHER")) {
-	            			core.setWorldWeather();
-	            		}
-	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETTIME")) {
-	            			String dayOrNight = msg.split(":")[1];
-	            			core.setWorldTime(dayOrNight);
-	            		}
-	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETHEALTH")) {
-	            			core.setHealth(msg.split(":")[1]);
-	            		}
-	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETHUNGER")) {
-	            			core.setHunger(msg.split(":")[1]);
-	            		}
-	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETEXPLVL")) {
-	            			core.setExpLvl(msg.split(":")[1]);
-	            		}
-	            		if (msg.split(":")[0].equals("REMOTECRAFT_COMMAND_SETGAMEMODE")) {
-	            			core.toggleGameMode();
-	            		}
+	            		processMessage(msg);
 	            	} catch (ClassNotFoundException e) {
 	            		e.printStackTrace();
 	            	} catch (EOFException e) {
 	            		e.printStackTrace();
 	            		setConnectivity(false);
+	            	} catch (SocketException e) {
+	            		e.printStackTrace();
+	            		setConnectivity(false);
 	            	}
-	            //} while (clientSocket.isConnected() && core.isWorldLoaded() && !msg.equals("REMOTECRAFT_COMMAND_QUIT"));
-	            } while (!Thread.currentThread().isInterrupted() && getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected() && !msg.equals("REMOTECRAFT_COMMAND_QUIT"));
+				}
+	            
 			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (Exception e) {
 				e.printStackTrace();
 			} finally {
 				try {
-					synchronized (out) {
-						
-						if (out!=null) {
+					if (out!=null) {
+						synchronized (out) {
 							out.close();
 							out = null;
 						}
-					
 					}
+					
 					if (in != null) {
 						in.close();
 						in = null;
 					}
+					
 					if (clientSocket != null) {
 						clientSocket.close();
 						clientSocket = null;
 					}
+					
 					if (serverSocket != null) {
 						serverSocket.close();
 						serverSocket = null;
@@ -165,51 +201,106 @@ public class NetworkManager implements Runnable {
 	// Send message to the client
 	public void sendMessage(String msg) {
 		
-		if (getKeepRunning() && core.isWorldLoaded() && getConnectivity() && clientSocket.isConnected()) {
+		if (getKeepRunning() && getConnectivity()) {
 			if (out != null) {
-				try {
-					out.writeObject(msg);
-					out.flush();
-					System.out.println("k9d3 server> "+msg);
-				} catch (IOException e) {
-					e.printStackTrace();
-					Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage("Error al enviar: "+msg);
+				synchronized (out) {
+					try {
+						out.writeObject(msg);
+						out.flush();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
 				}
 			}
 		}
 		
 	}
 	
-	// Shutdown the Server
-	public void shutdown() {
+	private void processMessage(String msg) {
 		
-		sendMessage("REMOTECRAFT_COMMAND_QUIT");
+		if (msg.equals("REMOTECRAFT_COMMAND_QUIT")) {
+			//sendMessage("REMOTECRAFT_COMMAND_QUIT");
+			setConnectivity(false);
+		} else {
 		
-		setConnectivity(false);
+			// Single parameter
+			// Everytime the WorldFragment is created in the Android app
+			if (msg.equals("REMOTECRAFT_COMMAND_GETWORLDINFO")) {
+				mCallback.forceSendWorldInfo();
+			} else if (msg.equals("REMOTECRAFT_COMMAND_SETWEATHER")) {
+				mCallback.setWorldWeather();
+			} else if (msg.equals("REMOTECRAFT_COMMAND_SETGAMEMODE")) {
+				mCallback.toggleGameMode();
+			} else if (msg.equals("REMOTECRAFT_COMMAND_GETSCREENSHOT")) {
+				mCallback.enableScreenShot();
+			} 
+
+			// More than 1 parameter
+			String mCommand = msg.split(":")[0];
+			if (mCommand.equals("REMOTECRAFT_COMMAND_SETTIME")) {
+				String dayOrNight = msg.split(":")[1];
+				mCallback.setWorldTime(dayOrNight);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_SETHEALTH")) {
+				int mHealth = Integer.parseInt(msg.split(":")[1]);
+				mCallback.setHealth(mHealth);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_SETHUNGER")) {
+				int mHunger = Integer.parseInt(msg.split(":")[1]);
+				mCallback.setHunger(mHunger);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_SETEXPLVL")) {
+				int mExpLvl = Integer.parseInt(msg.split(":")[1]);
+				mCallback.setExpLvl(mExpLvl);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_TELEPORT")) {
+				String mLocation = msg.split(":")[1];
+				String dimension = mLocation.split("_")[0];
+				int mDim;
+				if (dimension.equalsIgnoreCase("Nether")) {
+					mDim = -1;
+				} else if (dimension.equalsIgnoreCase("End")) {
+					mDim = 1;
+				} else {
+					mDim = 0;
+				}
+				int x = Integer.parseInt(mLocation.split("_")[1]);
+				int y = Integer.parseInt(mLocation.split("_")[2]);
+				int z = Integer.parseInt(mLocation.split("_")[3]);
+				mCallback.teleportTo(mDim, x, y, z);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_REDSTONE_BUTTON")) {
+				String mLocation = msg.split(":")[1];
+				String dimension = mLocation.split("_")[0];
+				int mDim;
+				if (dimension.equalsIgnoreCase("Nether")) {
+					mDim = -1;
+				} else if (dimension.equalsIgnoreCase("End")) {
+					mDim = 1;
+				} else {
+					mDim = 0;
+				}
+				int x = Integer.parseInt(mLocation.split("_")[1]);
+				int y = Integer.parseInt(mLocation.split("_")[2]);
+				int z = Integer.parseInt(mLocation.split("_")[3]);
+				mCallback.toggleButton(mDim, x, y, z);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_REDSTONE_LEVER")) {
+				String mLocation = msg.split(":")[1];
+				String dimension = mLocation.split("_")[0];
+				int mDim = 0;
+				if (dimension.equalsIgnoreCase("Nether")) {
+					mDim = -1;
+				} else if (dimension.equalsIgnoreCase("End")) {
+					mDim = 1;
+				} else {
+					mDim = 0;
+				}
+				int x = Integer.parseInt(mLocation.split("_")[1]);
+				int y = Integer.parseInt(mLocation.split("_")[2]);
+				int z = Integer.parseInt(mLocation.split("_")[3]);
+				mCallback.toggleLever(mDim, x, y, z);
+			}
 		
-		setKeepRunning(false);
-		
-		thread.interrupt();
-		
-		try {
-			if (out!=null)
-				out.close();
-			
-			if (in != null)
-				in.close();
-			
-			if (clientSocket != null)
-				clientSocket.close();
-			
-			if (serverSocket != null)
-				serverSocket.close();
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
-		
 	}
 	
-	// *** PLAYER INFO *** //
+	// Player Info
+	
 	public void sendPlayername(String playerName) {
 		sendMessage("REMOTECRAFT_INFO_PLAYERNAME:"+playerName);
 	}
@@ -257,7 +348,8 @@ public class NetworkManager implements Runnable {
 		}
 	}
 	
-	// *** WORLD INFO *** //
+	// World Info
+	
 	public void sendWorldName(String worldName) {
 		sendMessage("REMOTECRAFT_INFO_WORLDNAME:"+worldName);
 	}
@@ -302,18 +394,17 @@ public class NetworkManager implements Runnable {
 		}
 	}
 	
-	public void sendScreenShot(String fileName, String worldName) {
+	public void sendScreenShot(String fileName, long mSeed) throws IOException {
 		
 		synchronized (out) {
 			
-			sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND:"+worldName);
+			sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_SEND:"+String.valueOf(mSeed));
 			
 			// File to send
-			File myFile = new File(fileName);
+			File myFile = new File(Minecraft.getMinecraftDir().getCanonicalPath() + File.separator + "screenshots" + File.separator, fileName);
 			int fSize = (int) myFile.length();
 			if (fSize < myFile.length()) {
 				System.out.println("File is too big");
-				//throw new IOException("File is too big");
 				sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_ERROR");
 				return;
 			}
@@ -366,8 +457,10 @@ public class NetworkManager implements Runnable {
 		    		bis.close();
 		    	} catch (IOException e) {
 		    		e.printStackTrace();
+		    	} catch (NullPointerException e) {
+		    		e.printStackTrace();
 		    	}
-		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED:"+worldName);
+		    	sendMessage("REMOTECRAFT_COMMAND_SCREENSHOT_FINISHED:"+String.valueOf(mSeed));
 		    }
 		    
 		}

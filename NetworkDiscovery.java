@@ -5,22 +5,24 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
 
 import com.google.common.net.InetAddresses;
 
 public class NetworkDiscovery implements Runnable {
 	
-	private final int PORT = 9998;
+	private final int DISCOVERY_PORT = 9998;
 	
-	DatagramSocket socket;
+	private Thread thread;
 	
-	boolean keepRunning = true;
+	private DatagramSocket socket;
 	
-	String worldName = "";
+	private String worldName = "";
 	
 	// Private constructor for singleton
 	private NetworkDiscovery() {
-		
+		thread = new Thread(this);
+		thread.start();
 	}
 	
 	// Singleton holder
@@ -32,87 +34,76 @@ public class NetworkDiscovery implements Runnable {
 		return DiscoveryHolder.INSTANCE;
 	}
 	
-	// Load the world name
-	public void init(String worldName) {
+	// Set the world name
+	public void setWorldName(String worldName) {
 		this.worldName = worldName;
+	}
+	
+	public String getWorldName() {
+		return worldName;
+	}
+	
+	public void shutdown() {
+		thread.interrupt();
+		
+		if (socket != null) {
+			socket.close();
+			socket = null;
+		}
+		
+		thread = null;
 	}
 
 	// Discovery thread
 	@Override
 	public void run() {
-		// TODO Auto-generated method stub
-		
-		System.out.println("k9d3 Estoy dentro del runnable! run() antes del try {");
 		
 		while (!Thread.currentThread().isInterrupted()) {
 		
-		try {
-			socket = new DatagramSocket(PORT, InetAddress.getByName("0.0.0.0"));
-			socket.setBroadcast(true);
-			
-			// better like this
-			/*socket = new DatagramSocket(null);
-			socket.setBroadcast(true);
-			socket.setReuseAddress(true);
-			InetSocketAddress ia = new InetSocketAddress(InetAddress.getByName("0.0.0.0"), PORT);
-			socket.bind(ia);*/
-			
-			System.out.println("k9d3 DatagramSocket hecho y preparado!");
-			
-			int lol = 0;
-			
-			while (!Thread.currentThread().isInterrupted() && socket.isBound()) {
+			try {
+				socket = new DatagramSocket(DISCOVERY_PORT, InetAddress.getByName("0.0.0.0"));
+				socket.setBroadcast(true);
+				
 				// Keep an UDP Socket open
-				
-				System.out.println("k9d3 iteracion: "+lol);
-				lol++;
-				
-				// Ready to receive sockets
-				
-				// Receive a packet
-				byte[] rcvBuff = new byte[15000];
-				DatagramPacket packet = new DatagramPacket(rcvBuff, rcvBuff.length);
-				System.out.println("k9d3 Esperando peticion");
-				socket.receive(packet);
-				System.out.println("k9d3 Peticion recibida!");
-				
-				// Packet received
-				String msg = new String(packet.getData()).trim();
-				if (msg.equals("REMOTECRAFT_DISCOVERY_REQUEST")) {
-					// Send world name
-					String msgResponse = "REMOTECRAFT_DISCOVERY_RESPONSE:"+this.worldName;
-					byte[] sendData = msgResponse.getBytes();
+				while (!Thread.currentThread().isInterrupted() && socket.isBound()) {
+					// Ready to receive sockets
 					
-					// send response
-					System.out.println("k9d3 Preparando respuesta");
-					DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, packet.getAddress(), packet.getPort());
-					System.out.println("k9d3 Enviando paquete");
-					if (socket.isBound()) {
-						try {
-							socket.send(sendPacket);
-							System.out.println("k9d3 Paquete enviado segurisimo! :)");
-						} catch (Exception e) {
-							e.printStackTrace();
+					// Receive a packet
+					byte[] rcvBuff = new byte[15000];
+					DatagramPacket packet = new DatagramPacket(rcvBuff, rcvBuff.length);
+					socket.receive(packet);
+					
+					// Packet received
+					String msg = new String(packet.getData()).trim();
+					if (msg.equals("REMOTECRAFT_DISCOVERY_REQUEST")) {
+						// Attach world name
+						String msgResponse = "REMOTECRAFT_DISCOVERY_RESPONSE:"+this.worldName;
+						byte[] sendData = msgResponse.getBytes();
+						
+						// Send response
+						DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, packet.getAddress(), packet.getPort());
+						if (socket.isBound()) {
+							try {
+								socket.send(sendPacket);
+							} catch (Exception e) {
+								e.printStackTrace();
+							}
+						} else {
+							continue;
 						}
-					} else {
-						System.out.println("k9d3 Paquete NO enviado segurisimo! :(");
-						continue;
 					}
-					System.out.println("k9d3 Paquete enviado!");
+				}
+				
+			} catch (IOException e) {
+				e.printStackTrace();
+			} finally {
+				try {
+					socket.disconnect();
+					socket.close();
+				} catch (NullPointerException e) {
+					e.printStackTrace();
 				}
 			}
-			
-			if (!socket.isBound()) {
-				System.out.println("k9d3 Se sale del while porque socket is not bound");
-			}
-			
-		} catch (IOException e) {
-			e.printStackTrace();
-		} finally {
-			System.out.println("k9d3 Desconectado socket UDP!");
-			socket.disconnect();
-			socket.close();
-		}
 		
 		} // while !threadIsInterrupted
 		

@@ -1,63 +1,75 @@
 package com.zireck.remotecraft;
 
-import java.awt.Image;
-import java.io.File;
 import java.io.IOException;
 import java.util.EnumSet;
+import java.util.Random;
 
-import javax.imageio.ImageIO;
-import javax.swing.ImageIcon;
-
-import org.lwjgl.opengl.Drawable;
+import com.zireck.remotecraft.NetworkManager.INetworkListener;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.integrated.IntegratedServer;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.ScreenShotHelper;
+import net.minecraft.util.StringUtils;
 import net.minecraft.world.EnumGameType;
+import net.minecraft.world.Teleporter;
+import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
 
-public class Core implements ITickHandler {
+public class Core implements ITickHandler, INetworkListener {
 	
-	Minecraft mc = Minecraft.getMinecraft();
-	GuiScreen guiScreen = Minecraft.getMinecraft().currentScreen;
+	Minecraft mc;
 	
 	// Tells you if there's a minecraft world loaded
-	boolean isWorldLoaded = false;
+	private boolean isWorldLoaded;
 
 	// Socket manager
-	NetworkManager nManager = null;
+	NetworkManager nManager;
 	
 	// Discovery Socket
-	NetworkDiscovery nDiscovery = null;
-	Thread nDiscoveryThread = null;
+	NetworkDiscovery nDiscovery;
+	//Thread nDiscoveryThread;
 	
 	// User info
-	String playerName = "";
-	int health = 20;
-	int hunger = 20;
-	int armor = 0;
-	int expLvl = 0;
+	String playerName;
+	int health;
+	int hunger;
+	int armor;
+	int expLvl;
 	int x, y, z;
-	String currentItem = "";
+	String biome;
+	String currentItem;
 	
 	// World info
-	String worldName = "";
-	long seed = 0;
-	String biome = "";
-	boolean isDaytime = true;
-	boolean isRaining = false;
-	boolean isThundering = false;
-	int min = 0;
-	int hour = 0;
-	String timeZone = "am";
+	String worldName;
+	long seed;
+	boolean isDaytime;
+	int hour;
+	int minute;
+	String timeZone;
+	boolean isRaining;
+	boolean isThundering;
 	
-	long mWorldTime = 0;
-	long mWorldTotalTime = 0;
+	boolean shouldTakeScreenShot;
+	boolean shouldIGoToNether;
+	
+	public Core() {
+		// TODO Auto-generated constructor stub
+		mc = Minecraft.getMinecraft();
+		
+		isWorldLoaded = false;
+		nManager = null;
+		nDiscovery = null;
+		//nDiscoveryThread = null;
+		
+		resetInfo();
+	}
 	
 	@Override
 	public void tickStart(EnumSet<TickType> type, Object... tickData) {
@@ -69,10 +81,12 @@ public class Core implements ITickHandler {
 	public void tickEnd(EnumSet<TickType> type, Object... tickData) {
 		// TODO Auto-generated method stub
 		
-		if (mc.theWorld == null) {
-			onTickInGUI(mc.currentScreen);
-		} else {
-			onTickInGame();
+		if (mc != null) {
+			if (mc.theWorld != null) {
+				onTickInGame();				
+			} else {
+				onTickInGUI();
+			}
 		}
 		
 	}
@@ -89,39 +103,45 @@ public class Core implements ITickHandler {
 		return "Core";
 	}
 
-	public void onTickInGame() {
+	private void onTickInGame() {
+		
 		if (!isWorldLoaded()) {
-			
 			setWorldLoaded();
 			
 			// Network Discovery
 			nDiscovery = NetworkDiscovery.getInstance();
-			nDiscovery.init(worldName);
+			nDiscovery.setWorldName(worldName);
 
-			nDiscoveryThread = new Thread(nDiscovery);
-			nDiscoveryThread.start();
+			//nDiscoveryThread = new Thread(nDiscovery);
+			//nDiscoveryThread.start();
 			
 			// Network Manager
 			nManager = new NetworkManager(this);
-			
 		}
 		
 		updateInfo();
 		
-		if (nDiscovery.worldName == "") {
-			nDiscovery.worldName = worldName;
+		if (nDiscovery.getWorldName().equals("") && !this.worldName.equals("")) {
+			//nDiscovery.worldName = this.worldName;
+			nDiscovery.setWorldName(worldName);
 		}
+		
 	}
 	
-	public void onTickInGUI(GuiScreen guiScreen) {
+	private void onTickInGUI() {
 		if (isWorldLoaded()) {
 			setWorldUnloaded();
 			
 			// Shutdown the Network Discovery thread
-			if (nDiscoveryThread != null) {
+			/*if (nDiscoveryThread != null) {
 				nDiscoveryThread.interrupt();
 				nDiscoveryThread = null;
+			}*/
+			if (nDiscovery != null) {
+				nDiscovery.shutdown();
+				nDiscovery = null;
 			}
+			
 			
 			// Shutdown the Network Manager
 			if (nManager != null) {
@@ -145,485 +165,549 @@ public class Core implements ITickHandler {
 		isWorldLoaded = false;
 	}
 	
+	// Called every game tick. Update info and send when necessary
 	public void updateInfo() {
-		// Player Info
-		updateCoords();
-		updateBiome();
-		updateExpLevel();
+		updatePlayername();
 		updateHealth();
 		updateHunger();
+		updateExpLevel();
 		updateArmor();
-		updatePlayername();
+		updateCoords();
+		updateBiome();
 		updateCurrentItem();
 		
-		// World Info
 		updateWorldname();
 		updateSeed();
 		updateDaytime();
 		updateTime();
 		updateWeather();
-	}
-	
-	public void sendEverything() {
-		// Player Info
-		nManager.sendPlayername(this.playerName);
-		nManager.sendHealth(this.health);
-		nManager.sendHunger(this.hunger);
-		nManager.sendArmor(this.armor);
-		nManager.sendCoordX(this.x);
-		nManager.sendCoordY(this.y);
-		nManager.sendCoordZ(this.z);
-		nManager.sendBiome(this.biome);
-		nManager.sendExpLevel(this.expLvl);
-		nManager.sendCurrentItem(this.currentItem);
 		
-		// World Info
-		nManager.sendWorldName(this.worldName);
-		nManager.sendSeed(this.seed);
-		nManager.sendDaytime(this.isDaytime);
-		nManager.sendRaining(this.isRaining);
-		nManager.sendThundering(this.isThundering);
-		nManager.sendTime(this.hour, this.min, this.timeZone);
+		getScreenshot();
 	}
 	
-	public void sendWorldInfo() {
-		forceUpdateWorldname();
-		updateSeed();
-		forceUpdateDaytime();
-		forceUpdateBiome();
-		forceUpdateWeather();
-		forceUpdateTime();
-	}
-	
+	// Called every GUI tick, initialize data
 	public void resetInfo() {
+		this.playerName = "";
+		this.health = Integer.MIN_VALUE;
+		this.hunger = Integer.MIN_VALUE;
+		this.armor = Integer.MIN_VALUE;
+		this.expLvl = Integer.MIN_VALUE;
 		this.x = Integer.MIN_VALUE;
 		this.y = Integer.MIN_VALUE;
 		this.z = Integer.MIN_VALUE;
 		this.biome = "";
-		this.expLvl = 0;
-		this.health = 20;
-		this.hunger = 20;
-		this.armor = 0;
-		this.playerName = "";
 		this.currentItem = "";
 		
 		this.worldName = "";
-		this.seed = 0;
-		this.isDaytime = true;
+		this.seed = Long.MIN_VALUE;
+		this.isDaytime = false;
+		this.hour = Integer.MIN_VALUE;
+		this.minute = Integer.MIN_VALUE;
+		this.timeZone = "";
 		this.isRaining = false;
 		this.isThundering = false;
-		this.min = 0;
-		this.hour = 0;
-		this.timeZone = "am";
 		
-		this.mWorldTime = 0;
-		this.mWorldTotalTime = 0;
+		this.shouldTakeScreenShot = false;
+		this.shouldIGoToNether = false;
 	}
 	
-	public void updateWorldname() {
-		IntegratedServer server = this.mc.getIntegratedServer();
-		//String worldName = (server != null) ? server.getFolderName() : "sp_world";
-		String worldName = (server != null) ? server.getWorldName() : "sp_world";
-		if (this.worldName != worldName) {
-			this.worldName = worldName;
-			System.out.println("k9d3 worldname = "+this.worldName);
+	// Send data through TCP socket (INetworkListener)
+	public void sendEverything() {
+		if (isWorldLoaded()) {
+			nManager.sendPlayername(this.playerName);
+			nManager.sendHealth(this.health);
+			nManager.sendHunger(this.hunger);
+			nManager.sendArmor(this.armor);
+			nManager.sendExpLevel(this.expLvl);
+			nManager.sendCoordX(this.x);
+			nManager.sendCoordY(this.y);
+			nManager.sendCoordZ(this.z);
+			nManager.sendBiome(this.biome);
+			nManager.sendCurrentItem(this.currentItem);
+			
 			nManager.sendWorldName(this.worldName);
-		}
-	}
-	
-	public void updateSeed() {
-		if (this.seed != mc.getIntegratedServer().getServer().worldServers[0].getSeed()) {
-			this.seed = mc.getIntegratedServer().getServer().worldServers[0].getSeed();
 			nManager.sendSeed(this.seed);
+			nManager.sendDaytime(this.isDaytime);
+			nManager.sendTime(this.hour, this.minute, this.timeZone);
+			nManager.sendRaining(this.isRaining);
+			nManager.sendThundering(this.isThundering);
 		}
 	}
 	
-	public void updatePlayername() {
+	private void updatePlayername() {
 		if (this.playerName != mc.thePlayer.getEntityName()) {
 			this.playerName = mc.thePlayer.getEntityName();
-			System.out.println("k9d3 username = "+this.playerName);
+			nManager.sendPlayername(mc.thePlayer.getEntityName());
 		}
 	}
 	
-	public void updateHealth() {
-		if (this.health != mc.thePlayer.getHealth()) {
-			this.health = mc.thePlayer.getHealth();
-			System.out.println("k9d3 current health = "+this.health);
-			nManager.sendHealth(this.health);
+	private void updateHealth() {
+		int mHealth = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).getHealth();
+		if (this.health != mHealth) {
+			this.health = mHealth;
+			nManager.sendHealth(mHealth);
 		}
 	}
 
-	public void updateHunger() {
-		if (this.hunger != mc.thePlayer.getFoodStats().getFoodLevel()) {
-			this.hunger = mc.thePlayer.getFoodStats().getFoodLevel();
-			System.out.println("k9d3 current hunger = "+this.hunger);
-			nManager.sendHunger(this.hunger);
+	private void updateHunger() {
+		int mHunger = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).getFoodStats().getFoodLevel();
+		if (this.hunger != mHunger) {
+			this.hunger = mHunger;
+			nManager.sendHunger(mHunger);
 		}
 	}
 	
-	public void updateArmor() {
-		if (this.armor != mc.thePlayer.getTotalArmorValue()) {
-			this.armor = mc.thePlayer.getTotalArmorValue();
-			System.out.println("k9d3 current armor = "+this.armor);
-			nManager.sendArmor(this.armor);
+	private void updateArmor() {
+		int mArmor = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).getTotalArmorValue();
+		if (this.armor != mArmor) {
+			this.armor = mArmor;
+			nManager.sendArmor(mArmor);
 		}
 	}
 	
-	public void updateExpLevel() {
-		if (this.expLvl != mc.thePlayer.experienceLevel) {
-			this.expLvl = mc.thePlayer.experienceLevel;
-			System.out.println("k9d3 current exp level = "+this.expLvl);
-			nManager.sendExpLevel(this.expLvl);
+	private void updateExpLevel() {
+		int mExpLvl = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).experienceLevel;
+		if (this.expLvl != mExpLvl) {
+			this.expLvl = mExpLvl;
+			nManager.sendExpLevel(mExpLvl);
 		}
 	}
 	
-	public void updateCoords() {
-		int x = MathHelper.floor_double(mc.thePlayer.posX);
-		int y = MathHelper.floor_double(mc.thePlayer.posY);
-		int z = MathHelper.floor_double(mc.thePlayer.posZ);
+	private void updateCoords() {
+		int mX = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posX);
+		int mY = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posY);
+		int mZ = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posZ);
 		
-		if (this.x != x) {
-			this.x = x;
-			System.out.println("k9d3 x coord = "+this.x);
-			nManager.sendCoordX(this.x);
+		if (this.x != mX) {
+			this.x = mX;
+			nManager.sendCoordX(mX);
 		}
 		
-		if (this.y != y) {
-			this.y = y;
-			System.out.println("k9d3 y coord = "+this.y);
-			nManager.sendCoordY(this.y);
+		if (this.y != mY) {
+			this.y = mY;
+			nManager.sendCoordY(mY);
 		}
 		
-		if (this.z != z) {
-			this.z = z;
-			System.out.println("k9d3 z coord = "+this.z);
-			nManager.sendCoordZ(this.z);
+		if (this.z != mZ) {
+			this.z = mZ;
+			nManager.sendCoordZ(mZ);
 		}
 		
 	}
 	
-	public void updateBiome() {
-		String biome = "";
-		int x = MathHelper.floor_double(mc.thePlayer.posX);
-		int z = MathHelper.floor_double(mc.thePlayer.posZ);
-		Chunk chunk = mc.theWorld.getChunkFromBlockCoords(x, z);
-		biome = chunk.getBiomeGenForWorldCoords(x & 15, z & 15, mc.theWorld.getWorldChunkManager()).biomeName;
+	private void updateBiome() {
+		String mBiome;
+		int mX = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posX);
+		int mZ = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posZ);
+		Chunk mChunk = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getChunkFromBlockCoords(mX, mZ);
+		mBiome = mChunk.getBiomeGenForWorldCoords(mX & 15, mZ & 15, mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldChunkManager()).biomeName;
 		
-		try {
-			if (!this.biome.equals(biome)) {
-				System.out.println("k9d3 previous biome: "+this.biome);
-				System.out.println("k9d3 new biome: "+biome);
-				this.biome = biome;
-				nManager.sendBiome(this.biome);
-				
-				// Take Screenshot
-				//mc.ingameGUI.getChatGUI().printChatMessage("Screenshot tomada: "+ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight));
-				//String path = mc.getMinecraftDir() + File.separator + "screenshots" + File.separator + ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight);
-				//String path = mc.getAppDir("minecraft") + File.separator + "screenshots" + File.separator + ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight);
-				String path = "/Users/Zireck/Documents/forge/mcp/jars/screenshots/" + ScreenShotHelper.saveScreenshot(mc.getMinecraftDir(), mc.displayWidth, mc.displayHeight).split(" ")[3];
-				nManager.sendScreenShot(path, this.worldName);
-			}
-		} catch (NullPointerException e) {
-			e.printStackTrace();
+		if (!this.biome.equals(mBiome)) {
+			this.biome = mBiome;
+			nManager.sendBiome(mBiome);
 		}
 	}
 	
-	public void updateCurrentItem() {
-		
-		if (mc.thePlayer.inventory.getCurrentItem() == null && !this.currentItem.equals("")) {
+	private void updateCurrentItem() {
+		if (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).inventory.getCurrentItem() == null && !this.currentItem.equals("")) {
 			this.currentItem = "";
 			nManager.sendCurrentItem("null");
-		} else if (mc.thePlayer.inventory != null && mc.thePlayer.inventory.getCurrentItem() != null && mc.thePlayer.inventory.getCurrentItem().getDisplayName() != null) {
-			
-			if (!mc.thePlayer.inventory.getCurrentItem().getDisplayName().equals(this.currentItem)) {
-				this.currentItem = mc.thePlayer.inventory.getCurrentItem().getDisplayName();
-				nManager.sendCurrentItem(this.currentItem);
+		} else if (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).inventory.getCurrentItem() != null) {
+			if (!mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).inventory.getCurrentItem().getDisplayName().equals(this.currentItem)) {
+				this.currentItem = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).inventory.getCurrentItem().getDisplayName();
+				nManager.sendCurrentItem(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).inventory.getCurrentItem().getDisplayName());
 			}
-			
 		}
 	}
 	
-	public void updateDaytime() {
-		long time = mc.theWorld.getWorldTime() - 24000 * (int) (mc.theWorld.getWorldTime() / 24000);
-		if (time >= 0 && time < 12000) {
+	private void updateWorldname() {
+		String mWorldname;
+		if (mc.isIntegratedServerRunning()) {
+			mWorldname = mc.getIntegratedServer().getWorldName();
+		} else {
+			if (!mc.theWorld.getWorldInfo().getWorldName().isEmpty()) {
+				mWorldname = mc.theWorld.getWorldInfo().getWorldName();
+			} else {
+				mWorldname = "";
+			}
+		}
+		
+		if (!this.worldName.equals(mWorldname)) {
+			this.worldName = mWorldname;
+			nManager.sendWorldName(mWorldname);
+		}
+	}
+	
+	private void updateSeed() {
+		long mSeed = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getSeed();
+		if (this.seed != mSeed) {
+			this.seed = mSeed;
+			nManager.sendSeed(mSeed);
+		}
+	}
+	
+	private void updateDaytime() {
+		long mTime = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() - 24000 * (int) (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() / 24000);
+		if (mTime >= 0 && mTime < 12000) {
 			if (!this.isDaytime) {
 				this.isDaytime = true;
-				nManager.sendDaytime(isDaytime);
-				System.out.println("k9d3 ahora DayTime es true");
+				nManager.sendDaytime(true);
 			}
 		} else {
 			if (this.isDaytime) {
 				this.isDaytime = false;
-				nManager.sendDaytime(isDaytime);
-				System.out.println("k9d3 ahora DayTime es false");
+				nManager.sendDaytime(false);
 			}
 		}
 	}
 	
-	public void updateWeather() {
-		if (!this.isRaining && mc.theWorld.getWorldInfo().isRaining()) {
+	private void updateWeather() {
+		if (!this.isRaining && mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().isRaining()) {
 			this.isRaining = true;
-			nManager.sendRaining(this.isRaining);
-			System.out.println("k9d3 started raining");
-		} else if (this.isRaining && !mc.theWorld.getWorldInfo().isRaining()) {
+			nManager.sendRaining(true);
+		} else if (this.isRaining && !mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().isRaining()) {
 			this.isRaining = false;
-			nManager.sendRaining(this.isRaining);
-			System.out.println("k9d3 stopped raining");
+			nManager.sendRaining(false);
 		}
 		
-		if (!this.isThundering && mc.theWorld.getWorldInfo().isThundering()) {
+		if (!this.isThundering && mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().isThundering()) {
 			this.isThundering = true;
-			nManager.sendThundering(this.isThundering);
-			System.out.println("k9d3 started thundering");
-		} else if (this.isThundering && !mc.theWorld.getWorldInfo().isThundering()) {
+			nManager.sendThundering(true);
+		} else if (this.isThundering && !mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().isThundering()) {
 			this.isThundering = false;
-			nManager.sendThundering(this.isThundering);
-			System.out.println("k9d3 stopped thundering");
+			nManager.sendThundering(false);
 		}
 	}
 	
-	public void updateTime() {
-		// Time
-		long time;
-		if (mc.theWorld.getWorldTime() > 24000) {
-			time = mc.theWorld.getWorldTime() - 24000 * (int) (mc.theWorld.getWorldTime() / 24000);
+	private void updateTime() {
+		long mTime;
+		if (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() > 24000) {
+			mTime = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() - 24000 * (int) (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() / 24000);
 		} else {
-			time = mc.theWorld.getWorldTime();
+			mTime = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime();
 		}
 		
-		int hour, minute;
-		String timeZ = "";
+		int mHour, mMinute;
+		String mTimeZone = "";
 		
 		// Calculate minutes
-		if ( ((time * 60) / 1000) > 60 ) {
-			minute = (int) ((time * 60) / 1000) - (60 * ((int) time / 1000));
+		if ( ((mTime * 60) / 1000) > 60 ) {
+			mMinute = (int) ((mTime * 60) / 1000) - (60 * ((int) mTime / 1000));
 		} else {
-			minute = (int) ((time * 60) / 1000);
+			mMinute = (int) ((mTime * 60) / 1000);
 		}
 		
 		// if minutes == 0 or 15 or 30 or 45, then update and send
-		if (minute == 0 || minute == 15 || minute == 30 || minute == 45) {
+		if (mMinute == 0 || mMinute == 15 || mMinute == 30 || mMinute == 45) {
 			
 			// Calculate hour
-			if ( (((int) time / 1000) + 6) > 23 ) {
-				hour = (((int) time / 1000) + 6) - 24;
+			if ( (((int) mTime / 1000) + 6) > 23 ) {
+				mHour = (((int) mTime / 1000) + 6) - 24;
 			} else {
-				hour = ((int) time / 1000) + 6;
+				mHour = ((int) mTime / 1000) + 6;
 			}
 			
 			// Set hour from 24 to 12
-			if (hour > 11) {
-				hour = hour - 12;
-				timeZ = "pm";
+			if (mHour > 11) {
+				mHour = mHour - 12;
+				mTimeZone = "pm";
 			} else {
-				timeZ = "am";
+				mTimeZone = "am";
 			}
 			
 			// Set 0 to 12
-			if (hour == 0) {
-				hour = 12;
+			if (mHour == 0) {
+				mHour = 12;
 			}
 			
-			if (this.hour != hour || this.min != minute || !this.timeZone.equals(timeZ)) {
-				this.hour = hour;
-				this.min = minute;
-				this.timeZone = timeZ;
-				nManager.sendTime(this.hour, this.min, this.timeZone);
-				System.out.println("k9d3 Time: "+hour+":"+minute);
+			if (this.hour != mHour || this.minute != mMinute || !this.timeZone.equals(mTimeZone)) {
+				this.hour = mHour;
+				this.minute = mMinute;
+				this.timeZone = mTimeZone;
+				nManager.sendTime(this.hour, this.minute, this.timeZone);
 			}
-			
-		}
-
-	}
-	
-	public void forceUpdateWorldname() {
-		IntegratedServer server = this.mc.getIntegratedServer();
-		//String worldName = (server != null) ? server.getFolderName() : "sp_world";
-		String worldName = (server != null) ? server.getWorldName() : "sp_world";
-		this.worldName = worldName;
-		nManager.sendWorldName(this.worldName);
-		System.out.println("k9d3 worldname = "+this.worldName);
-	}
-	
-	public void forceUpdateDaytime() {
-		long time = mc.theWorld.getWorldTime() - 24000 * (int) (mc.theWorld.getWorldTime() / 24000);
-		if (time >= 0 && time < 12000) {
-			this.isDaytime = true;
-			nManager.sendDaytime(isDaytime);
-			System.out.println("k9d3 ahora DayTime es true");
-		} else {
-			this.isDaytime = false;
-			nManager.sendDaytime(isDaytime);
-			System.out.println("k9d3 ahora DayTime es false");
 		}
 	}
 	
-	public void forceUpdateBiome() {
-		String biome = "";
-		int x = MathHelper.floor_double(mc.thePlayer.posX);
-		int z = MathHelper.floor_double(mc.thePlayer.posZ);
-		Chunk chunk = mc.theWorld.getChunkFromBlockCoords(x, z);
-		biome = chunk.getBiomeGenForWorldCoords(x & 15, z & 15, mc.theWorld.getWorldChunkManager()).biomeName;
-		
-		try {
-			this.biome = biome;
-			nManager.sendBiome(this.biome);
-		} catch (NullPointerException e) {
-			e.printStackTrace();
-		}
+	// NetworkManager Interface
+	
+	public void setHealth(int mHealth) {
+		mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).setEntityHealth(mHealth);
 	}
 	
-	public void forceUpdateWeather() {
-		if (mc.theWorld.getWorldInfo().isRaining()) {
-			this.isRaining = true;
-			nManager.sendRaining(this.isRaining);
-			System.out.println("k9d3 started raining");
-		} else {
-			this.isRaining = false;
-			nManager.sendRaining(this.isRaining);
-			System.out.println("k9d3 stopped raining");
-		}
-		
-		if (mc.theWorld.getWorldInfo().isThundering()) {
-			this.isThundering = true;
-			nManager.sendThundering(this.isThundering);
-			System.out.println("k9d3 started thundering");
-		} else {
-			this.isThundering = false;
-			nManager.sendThundering(this.isThundering);
-			System.out.println("k9d3 stopped thundering");
-		}
+	public void setHunger(int mHunger) {
+		mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).getFoodStats().setFoodLevel(mHunger);
 	}
 	
-	public void forceUpdateTime() {
-		long time;
-		if (mc.theWorld.getWorldTime() > 24000) {
-			time = mc.theWorld.getWorldTime() - 24000 * (int) (mc.theWorld.getWorldTime() / 24000);
-		} else {
-			time = mc.theWorld.getWorldTime();
-		}
-		
-		int hour, minute;
-		// Calculate hour
-		if ( (((int) time / 1000) + 6) > 23 ) {
-			hour = (((int) time / 1000) + 6) - 24;
-		} else {
-			hour = ((int) time / 1000) + 6;
-		}
-
-		// Calculate minutes
-		if ( ((time * 60) / 1000) > 60 ) {
-			minute = (int) ((time * 60) / 1000) - (60 * ((int) time / 1000));
-		} else {
-			minute = (int) ((time * 60) / 1000);
-		}
-		this.min = minute;
-		
-		// Set hour from 24 to 12
-		if (hour > 11) {
-			this.hour = hour - 12;
-			this.timeZone = "pm";
-		} else {
-			this.hour = hour;
-			this.timeZone = "am";
-		}
-		
-		// Set 0 to 12
-		if (this.hour == 0) {
-			this.hour = 12;
-		}
-		
-		System.out.println("k9d3 Time: "+hour+":"+minute);
-		
-		nManager.sendTime(this.hour, this.min, this.timeZone);
-		
-	}
-	
-	public void updateGameMode() {
-		/*
-		//EnumGameType currentGameMode = mc.theWorld.getWorldInfo().getGameType();
-		EnumGameType currentGameMode = mc.getIntegratedServer().getGameType();
-		
-		if (!this.gameMode.equals("C") && currentGameMode == EnumGameType.CREATIVE) {
-			this.gameMode = "C";
-			System.out.println("k9d3 new game mode: creative");
-		}
-		
-		if (!this.gameMode.equals("A") && currentGameMode.isAdventure()) {
-			this.gameMode = "A";
-			System.out.println("k9d3 new game mode: adventure");			
-		}
-		
-		if (!currentGameMode.isAdventure() && currentGameMode.isSurvivalOrAdventure()) {
-			// it's survival
-			if (!this.gameMode.equals("S")) {
-				this.gameMode = "S";
-				System.out.println("k9d3 new game mode: survival");
-			}
-		}*/
-	}
-	
-	public void setHealth(String health) {
-		int mHealth = Integer.parseInt(health);
-		mc.getIntegratedServer().getServer().worldServers[0].getPlayerEntityByName(this.playerName).setEntityHealth(mHealth);
-	}
-	
-	public void setHunger(String hunger) {
-		int mHunger = Integer.parseInt(hunger);
-		mc.getIntegratedServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).getFoodStats().setFoodLevel(mHunger);
-	}
-	
-	public void setExpLvl(String xpLvl) {
-		int mXpLvl = Integer.parseInt(xpLvl);
-		mc.getIntegratedServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).addExperienceLevel(0);
-		mc.getIntegratedServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).addExperienceLevel(mXpLvl);
+	public void setExpLvl(int mExpLvl) {
+		mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).addExperienceLevel(mExpLvl);
 	}
 	
 	public void toggleGameMode() {
 		if (mc.playerController.isInCreativeMode()) {
-			mc.getIntegratedServer().getServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).setGameType(EnumGameType.SURVIVAL);
+			mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).setGameType(EnumGameType.SURVIVAL);
 		} else {
-			mc.getIntegratedServer().getServer().worldServers[0].getPlayerEntityByName(mc.thePlayer.username).setGameType(EnumGameType.CREATIVE);
+			mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).setGameType(EnumGameType.CREATIVE);
 		}
 	}
 	
 	public void setWorldTime(String dayOrNight) {
-		if (dayOrNight.equals("DAY")) {
-			//mc.theWorld.setWorldTime(0);
-			System.out.println("k9d3 Trying to set Time as Day");
-			mc.getIntegratedServer().getServer().worldServers[0].setWorldTime(0);
-		} else if (dayOrNight.equals("NIGHT")) {
-			//mc.theWorld.setWorldTime(12500);
-			System.out.println("k9d3 Trying to set Time as Night");
-			mc.getIntegratedServer().getServer().worldServers[0].setWorldTime(12500);
+		if (dayOrNight.equalsIgnoreCase("Day")) {
+			mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).setWorldTime(0);
+		} else if (dayOrNight.equalsIgnoreCase("Night")) {
+			mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).setWorldTime(12500);
 		}
 	}
 	
 	public void setWorldWeather() {
-		System.out.println("k9d3 TOGGLE RAIN ()");
-		//mc.theWorld.toggleRain();
-		mc.getIntegratedServer().getServer().worldServers[0].toggleRain();
+		mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).toggleRain();
 	}
 	
-	public static boolean isWorldMultiplayer() {
-		try {
-			if( MinecraftServer.getServer().isServerRunning() ) {
-				return !MinecraftServer.getServer().isSinglePlayer();
+	public void enableScreenShot() {
+		shouldTakeScreenShot = true;
+	}
+	
+	// Apparently, it's not possible to call ScreenShotHelper.saveScreenshot() from the NetworkManager thread, so I'm using a flag (shouldTakeScreenShot)
+	public void getScreenshot() {
+		if (shouldTakeScreenShot) {
+			shouldTakeScreenShot = false;
+			try {
+				String fileName = ScreenShotHelper.saveScreenshot(mc.getMinecraftDir().getCanonicalFile(), mc.displayWidth, mc.displayHeight);
+				fileName = fileName.split(" ")[3];
+				nManager.sendScreenShot(fileName, seed);
+			} catch (IOException e) {
+				e.printStackTrace();
 			}
-			return true;
-		} catch (Exception e) {
-			return true;
 		}
 	}
 	
-	public static boolean isWorldSinglePlayer() {
-		try {
-			if (MinecraftServer.getServer().isServerRunning()) {
-				return MinecraftServer.getServer().isSinglePlayer();
-			}
-			return false;
-		} catch (Exception e) { // Server is null, not started
-			return false;
+	public void teleportTo(int mDim, int x, int y, int z) {
+		if (mc.thePlayer.dimension == mDim) {
+			mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).setPositionAndUpdate(x, y, z);			
+		} else {
+			EntityPlayerMP mPlayer = (EntityPlayerMP) mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName());
+			mPlayer.mcServer.getConfigurationManager().transferPlayerToDimension(mPlayer, mDim, new MyTeleporter( mc.getIntegratedServer().worldServerForDimension(mDim), x, y, z ));			
 		}
+	}
+	
+	public void toggleButton(int mDim, int x, int y, int z) {
+		final int mButtonStone = 77;
+		final int mButtonWood = 143;
+		
+		WorldServer mWorld = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension);
+		
+		if (mDim == mc.thePlayer.dimension) {
+			if (mWorld.blockExists(x, y, z)) {
+				if (mWorld.getBlockId(x, y, z) == mButtonStone || mWorld.getBlockId(x, y, z) == mButtonWood) {
+					int blockID = mWorld.getBlockId(x, y, z);
+					// Time period the button will remain active (20 = stone, 30 = wooden)
+					int tickRate = (blockID == 77) ? 20 : 30;
+					
+					// Activate button
+		            int i1 = mWorld.getBlockMetadata(x, y, z);
+		            int j1 = i1 & 7;
+		            int k1 = 8 - (i1 & 8);
+		            if (k1 != 0) {
+		            	mWorld.setBlockMetadataWithNotify(x, y, z, j1+k1, 3);
+		            	mWorld.markBlockRangeForRenderUpdate(x, y, z, x, y, z);
+		            	mWorld.playSoundEffect((double) x + 0.5D, (double) y + 0.5D, (double) z + 0.5D, "random.click", 0.3F, 0.6F);
+		            	mWorld.scheduleBlockUpdate(x, y, z, blockID, tickRate);
+		            	
+		            	// Notify block update
+		            	mWorld.notifyBlocksOfNeighborChange(x, y, z, blockID);
+	
+		                if (j1 == 1) {
+		                	mWorld.notifyBlocksOfNeighborChange(x - 1, y, z, blockID);
+		                } else if (j1 == 2) {
+		                	mWorld.notifyBlocksOfNeighborChange(x + 1, y, z, blockID);
+		                } else if (j1 == 3) {
+		                	mWorld.notifyBlocksOfNeighborChange(x, y, z - 1, blockID);
+		                } else if (j1 == 4) {
+		                	mWorld.notifyBlocksOfNeighborChange(x, y, z + 1, blockID);
+		                } else {
+		                	mWorld.notifyBlocksOfNeighborChange(x, y - 1, z, blockID);
+		                }
+		            }
+					
+				} else {
+					mc.ingameGUI.getChatGUI().printChatMessage("[Remotecraft] Error. Block is not a Button.");
+				}
+			} else {
+				mc.ingameGUI.getChatGUI().printChatMessage("[Remotecraft] Error. No block found.");
+			}
+		} else {
+			mc.ingameGUI.getChatGUI().printChatMessage("[Remotecraft] Error. Not in the same dimension.");
+		}
+	}
+	
+	public void toggleLever(int mDim, int x, int y, int z) {
+		final int mLever = 69;
+		
+		WorldServer mWorld = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension);
+		
+		if (mDim == mc.thePlayer.dimension) {
+			if (mWorld.blockExists(x, y, z)) {
+				if (mWorld.getBlockId(x, y, z) == mLever) {
+					
+					// Activate lever
+		            int i1 = mWorld.getBlockMetadata(x, y, z);
+		            int j1 = i1 & 7;
+		            int k1 = 8 - (i1 & 8);
+		            
+		            mWorld.setBlockMetadataWithNotify(x, y, z, j1+k1, 3);
+		            mWorld.playSoundEffect((double) x + 0.5D, (double) y + 0.5D, (double) z + 0.5D, "random.click", 0.3F, k1 > 0 ? 0.6F : 0.5F);
+		            mWorld.notifyBlocksOfNeighborChange(x, y, z, 69);
+	
+		            if (j1 == 1) {
+		            	mWorld.notifyBlocksOfNeighborChange(x - 1, y, z, 69);
+		            } else if (j1 == 2) {
+		            	mWorld.notifyBlocksOfNeighborChange(x + 1, y, z, 69);
+		            } else if (j1 == 3) {
+		            	mWorld.notifyBlocksOfNeighborChange(x, y, z - 1, 69);
+		            } else if (j1 == 4) {
+		            	mWorld.notifyBlocksOfNeighborChange(x, y, z + 1, 69);
+		            } else if (j1 != 5 && j1 != 6) {
+		                if (j1 == 0 || j1 == 7) {
+		                	mWorld.notifyBlocksOfNeighborChange(x, y + 1, z, 69);
+		                }
+		            } else {
+		            	mWorld.notifyBlocksOfNeighborChange(x, y - 1, z, 69);
+		            }
+		            
+				} else {
+					mc.ingameGUI.getChatGUI().printChatMessage("[Remotecraft] Error. Block is not a Lever.");
+				}
+			} else {
+				mc.ingameGUI.getChatGUI().printChatMessage("[Remotecraft] Error. No block found.");
+			}
+		} else {
+			mc.ingameGUI.getChatGUI().printChatMessage("[Remotecraft] Error. Not in the same dimension.");
+		}
+	}
+	
+	// This method is called everytime the WorldFragment is created in the Android app
+	public void forceSendWorldInfo() {
+		forceUpdateBiome();
+		forceUpdateDaytime();
+		forceUpdateWeather();
+		forceUpdateTime();
+	}
+	
+	private void forceUpdateBiome() {
+		String mBiome;
+		int mX = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posX);
+		int mZ = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posZ);
+		Chunk mChunk = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getChunkFromBlockCoords(mX, mZ);
+		mBiome = mChunk.getBiomeGenForWorldCoords(mX & 15, mZ & 15, mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldChunkManager()).biomeName;
+		
+		this.biome = mBiome;
+		nManager.sendBiome(mBiome);
+	}
+	
+	private void forceUpdateDaytime() {
+		long mTime = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() - 24000 * (int) (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() / 24000);
+		if (mTime >= 0 && mTime < 12000) {
+			this.isDaytime = true;
+			nManager.sendDaytime(true);
+		} else {
+			this.isDaytime = false;
+			nManager.sendDaytime(false);
+		}
+	}
+	
+	private void forceUpdateWeather() {
+		if (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().isRaining()) {
+			this.isRaining = true;
+			nManager.sendRaining(true);
+		} else {
+			this.isRaining = false;
+			nManager.sendRaining(false);
+		}
+		
+		if (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().isThundering()) {
+			this.isThundering = true;
+			nManager.sendThundering(true);
+		} else {
+			this.isThundering = false;
+			nManager.sendThundering(false);
+		}
+	}
+	
+	private void forceUpdateTime() {
+		long mTime;
+		if (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() > 24000) {
+			mTime = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() - 24000 * (int) (mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime() / 24000);
+		} else {
+			mTime = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getWorldInfo().getWorldTime();
+		}
+		
+		int mHour, mMinute;
+		String mTimeZone = "";
+		
+		// Calculate minutes
+		if ( ((mTime * 60) / 1000) > 60 ) {
+			mMinute = (int) ((mTime * 60) / 1000) - (60 * ((int) mTime / 1000));
+		} else {
+			mMinute = (int) ((mTime * 60) / 1000);
+		}
+		
+		// Calculate hour
+		if ( (((int) mTime / 1000) + 6) > 23 ) {
+			mHour = (((int) mTime / 1000) + 6) - 24;
+		} else {
+			mHour = ((int) mTime / 1000) + 6;
+		}
+		
+		// Set hour from 24 to 12
+		if (mHour > 11) {
+			mHour = mHour - 12;
+			mTimeZone = "pm";
+		} else {
+			mTimeZone = "am";
+		}
+		
+		// Set 0 to 12
+		if (mHour == 0) {
+			mHour = 12;
+		}
+		
+		this.hour = mHour;
+		this.minute = mMinute;
+		this.timeZone = mTimeZone;
+		nManager.sendTime(this.hour, this.minute, this.timeZone);
+		
+	}
+	
+	private class MyTeleporter extends Teleporter {
+        private Random random;
+        int x, y, z;
+        
+        public MyTeleporter(WorldServer par1WorldServer, int x, int y, int z) {
+	        super(par1WorldServer);
+	        random = new Random();
+	        this.x = x;
+	        this.y = y;
+	        this.z = z;
+        }
+        
+        @Override
+        public void placeInPortal(Entity par1Entity, double par2, double par4, double par6, float par8) {
+        	par1Entity.setLocationAndAngles(x, y, z, par1Entity.rotationYaw, par1Entity.rotationPitch);
+        }
+        
+        @Override
+        public boolean placeInExistingPortal(Entity par1Entity, double par2, double par4, double par6, float par8) {
+	        return false;
+        }
+
+        @Override
+        public boolean makePortal(Entity ent) {
+	        return true;
+        }
+
+        @Override
+        public void removeStalePortalLocations(long l) {
+	        //
+        }
 	}
 }
