@@ -18,6 +18,7 @@ public class NetworkDiscovery implements Runnable {
 	private DatagramSocket socket;
 	
 	private String worldName = "";
+	private long worldSeed = 0;
 	
 	// Private constructor for singleton
 	private NetworkDiscovery() {
@@ -43,8 +44,18 @@ public class NetworkDiscovery implements Runnable {
 		return worldName;
 	}
 	
+	public void setWorldSeed(long seed) {
+		this.worldSeed = seed;
+	}
+	
+	public long getWorldSeed() {
+		return worldSeed;
+	}
+	
 	public void shutdown() {
-		thread.interrupt();
+		if (thread != null) {
+			thread.interrupt();
+		}
 		
 		if (socket != null) {
 			socket.close();
@@ -77,7 +88,7 @@ public class NetworkDiscovery implements Runnable {
 					String msg = new String(packet.getData()).trim();
 					if (msg.equals("REMOTECRAFT_DISCOVERY_REQUEST")) {
 						// Attach world name
-						String msgResponse = "REMOTECRAFT_DISCOVERY_RESPONSE:"+this.worldName;
+						String msgResponse = "REMOTECRAFT_DISCOVERY_RESPONSE:"+String.valueOf(this.worldSeed)+"_"+this.worldName;
 						byte[] sendData = msgResponse.getBytes();
 						
 						// Send response

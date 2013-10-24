@@ -46,6 +46,9 @@ public class NetworkManager implements Runnable {
 		public void setHunger(int mHunger);
 		public void setExpLvl(int mExpLvl);
 		public void toggleGameMode();
+		public void getInventory();
+		public void getEnderchest();
+		public void stopRecord();
 
 		public void setWorldTime(String dayOrNight);
 		public void setWorldWeather();
@@ -53,6 +56,7 @@ public class NetworkManager implements Runnable {
 		public void teleportTo(int mDim, int x, int y, int z);
 		public void toggleButton(int mDim, int x, int y, int z);
 		public void toggleLever(int mDim, int x, int y, int z);
+		public void playRecord(String record);
 		
 		public void forceSendWorldInfo();
 	}
@@ -219,7 +223,6 @@ public class NetworkManager implements Runnable {
 	private void processMessage(String msg) {
 		
 		if (msg.equals("REMOTECRAFT_COMMAND_QUIT")) {
-			//sendMessage("REMOTECRAFT_COMMAND_QUIT");
 			setConnectivity(false);
 		} else {
 		
@@ -233,7 +236,13 @@ public class NetworkManager implements Runnable {
 				mCallback.toggleGameMode();
 			} else if (msg.equals("REMOTECRAFT_COMMAND_GETSCREENSHOT")) {
 				mCallback.enableScreenShot();
-			} 
+			}  else if (msg.equals("REMOTECRAFT_COMMAND_GETINVENTORY")) {
+				mCallback.getInventory();
+			} else if (msg.equals("REMOTECRAFT_COMMAND_GETENDERCHEST")) {
+				mCallback.getEnderchest();
+			} else if (msg.equals("REMOTECRAFT_COMMAND_RECORD_STOP")) {
+				mCallback.stopRecord();
+			}
 
 			// More than 1 parameter
 			String mCommand = msg.split(":")[0];
@@ -294,6 +303,8 @@ public class NetworkManager implements Runnable {
 				int y = Integer.parseInt(mLocation.split("_")[2]);
 				int z = Integer.parseInt(mLocation.split("_")[3]);
 				mCallback.toggleLever(mDim, x, y, z);
+			} else if (mCommand.equals("REMOTECRAFT_COMMAND_RECORD")) {
+				mCallback.playRecord(msg.split(":")[1]);
 			}
 		
 		}
@@ -374,7 +385,8 @@ public class NetworkManager implements Runnable {
 		} else {
 			mMin = Integer.toString(minute);
 		}
-		String mTime = mHour + "_" + mMin + "_" + timeZone;
+		//String mTime = mHour + "_" + mMin + "_" + timeZone;
+		String mTime = mHour + "_" + mMin;
 		sendMessage("REMOTECRAFT_INFO_TIME:"+mTime);
 	}
 	
@@ -465,6 +477,18 @@ public class NetworkManager implements Runnable {
 		    
 		}
 		
+	}
+	
+	public void sendInventoryItem(String item, int amount) {
+		sendMessage("REMOTECRAFT_INFO_INVENTORY_ITEM:"+item+"_"+String.valueOf(amount));
+	}
+	
+	public void sendEnderchestItem(String item, int amount) {
+		sendMessage("REMOTECRAFT_INFO_ENDERCHEST_ITEM:"+item+"_"+String.valueOf(amount));
+	}
+	
+	public void sendSpawnPoint(int x, int y, int z) {
+		sendMessage("REMOTECRAFT_INFO_SPAWNPOINT:"+String.valueOf(x)+"_"+String.valueOf(y)+"_"+String.valueOf(z));
 	}
 
 }

@@ -2,23 +2,26 @@ package com.zireck.remotecraft;
 
 import java.io.IOException;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Random;
 
-import com.zireck.remotecraft.NetworkManager.INetworkListener;
-
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.integrated.IntegratedServer;
+import net.minecraft.entity.player.InventoryPlayer;
+import net.minecraft.inventory.Container;
+import net.minecraft.inventory.InventoryEnderChest;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.ScreenShotHelper;
-import net.minecraft.util.StringUtils;
 import net.minecraft.world.EnumGameType;
 import net.minecraft.world.Teleporter;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
+
+import com.zireck.remotecraft.NetworkManager.INetworkListener;
+
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
 
@@ -34,7 +37,6 @@ public class Core implements ITickHandler, INetworkListener {
 	
 	// Discovery Socket
 	NetworkDiscovery nDiscovery;
-	//Thread nDiscoveryThread;
 	
 	// User info
 	String playerName;
@@ -66,7 +68,6 @@ public class Core implements ITickHandler, INetworkListener {
 		isWorldLoaded = false;
 		nManager = null;
 		nDiscovery = null;
-		//nDiscoveryThread = null;
 		
 		resetInfo();
 	}
@@ -112,9 +113,6 @@ public class Core implements ITickHandler, INetworkListener {
 			nDiscovery = NetworkDiscovery.getInstance();
 			nDiscovery.setWorldName(worldName);
 
-			//nDiscoveryThread = new Thread(nDiscovery);
-			//nDiscoveryThread.start();
-			
 			// Network Manager
 			nManager = new NetworkManager(this);
 		}
@@ -122,7 +120,6 @@ public class Core implements ITickHandler, INetworkListener {
 		updateInfo();
 		
 		if (nDiscovery.getWorldName().equals("") && !this.worldName.equals("")) {
-			//nDiscovery.worldName = this.worldName;
 			nDiscovery.setWorldName(worldName);
 		}
 		
@@ -133,10 +130,6 @@ public class Core implements ITickHandler, INetworkListener {
 			setWorldUnloaded();
 			
 			// Shutdown the Network Discovery thread
-			/*if (nDiscoveryThread != null) {
-				nDiscoveryThread.interrupt();
-				nDiscoveryThread = null;
-			}*/
 			if (nDiscovery != null) {
 				nDiscovery.shutdown();
 				nDiscovery = null;
@@ -231,6 +224,12 @@ public class Core implements ITickHandler, INetworkListener {
 			nManager.sendTime(this.hour, this.minute, this.timeZone);
 			nManager.sendRaining(this.isRaining);
 			nManager.sendThundering(this.isThundering);
+			
+			// Send spawn point
+			ChunkCoordinates bedLocation = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).getBedLocation();
+			if (bedLocation != null) {
+				nManager.sendSpawnPoint(bedLocation.posX, bedLocation.posY, bedLocation.posZ);
+			}
 		}
 	}
 	
@@ -407,6 +406,7 @@ public class Core implements ITickHandler, INetworkListener {
 				mHour = ((int) mTime / 1000) + 6;
 			}
 			
+			/*
 			// Set hour from 24 to 12
 			if (mHour > 11) {
 				mHour = mHour - 12;
@@ -418,7 +418,7 @@ public class Core implements ITickHandler, INetworkListener {
 			// Set 0 to 12
 			if (mHour == 0) {
 				mHour = 12;
-			}
+			}*/
 			
 			if (this.hour != mHour || this.minute != mMinute || !this.timeZone.equals(mTimeZone)) {
 				this.hour = mHour;
@@ -710,4 +710,50 @@ public class Core implements ITickHandler, INetworkListener {
 	        //
         }
 	}
+
+	@Override
+	public void getInventory() {
+		// TODO Auto-generated method stub
+		ItemStack item;
+		
+		InventoryPlayer inventoryPlayer = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).inventory;
+		for (int i=0; i<inventoryPlayer.getSizeInventory(); i++) {
+			item = inventoryPlayer.getStackInSlot(i);
+			if (item != null) {
+				nManager.sendInventoryItem(item.getDisplayName(), item.stackSize);
+			}
+		}
+	}
+
+	@Override
+	public void getEnderchest() {
+		// TODO Auto-generated method stub
+		InventoryEnderChest mEnderchest = mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).getInventoryEnderChest();
+		
+		ItemStack item;
+		for (int i=0; i<mEnderchest.getSizeInventory(); i++) {
+			item = mEnderchest.getStackInSlot(i);
+			if (item != null) {
+				nManager.sendEnderchestItem(item.getDisplayName(), item.stackSize);
+			}
+		}
+	}
+
+	@Override
+	public void playRecord(String record) {
+		// TODO Auto-generated method stub
+		int x = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posX);
+		int y = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posY);
+		int z = MathHelper.floor_double(mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).getPlayerEntityByName(mc.thePlayer.getEntityName()).posZ);
+		
+		mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).playRecord(record, x, y, z);
+		System.out.println("kd93 playing record: "+record);
+	}
+
+	@Override
+	public void stopRecord() {
+		// TODO Auto-generated method stub
+		mc.getIntegratedServer().worldServerForDimension(mc.thePlayer.dimension).playRecord("stop", x, y, z);
+	}
+	
 }
